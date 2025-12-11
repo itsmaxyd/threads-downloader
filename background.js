@@ -136,52 +136,72 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     console.log(`Received ${validUrls.length} valid media URLs (${mediaUrls.length - validUrls.length} filtered) for ${username}`);
     
-    // Check for existing files and filter out already downloaded ones
-    const sanitizedUsername = sanitizeFilename(username);
-    const existingFiles = await checkExistingFiles(sanitizedUsername, validUrls.length);
-    
-    // Add to download queue, skipping already downloaded files
-    totalFiles = validUrls.length;
-    let skippedCount = 0;
-    validUrls.forEach((url, index) => {
-      const fileIndex = index + 1;
-      // Check if file already exists
-      if (!existingFiles.has(fileIndex)) {
-        downloadQueue.push({
-          url: url,
-          username: username,
-          index: fileIndex,
-          total: validUrls.length
+    // Handle async file checking
+    (async () => {
+      try {
+        // Check for existing files and filter out already downloaded ones
+        const sanitizedUsername = sanitizeFilename(username);
+        const existingFiles = await checkExistingFiles(sanitizedUsername, validUrls.length);
+        
+        // Add to download queue, skipping already downloaded files
+        totalFiles = validUrls.length;
+        let skippedCount = 0;
+        validUrls.forEach((url, index) => {
+          const fileIndex = index + 1;
+          // Check if file already exists
+          if (!existingFiles.has(fileIndex)) {
+            downloadQueue.push({
+              url: url,
+              username: username,
+              index: fileIndex,
+              total: validUrls.length
+            });
+          } else {
+            skippedCount++;
+            downloadCount++; // Count skipped files as "downloaded"
+          }
         });
-      } else {
-        skippedCount++;
-        downloadCount++; // Count skipped files as "downloaded"
+        
+        if (skippedCount > 0) {
+          console.log(`Skipped ${skippedCount} already downloaded files, starting from file ${downloadQueue.length > 0 ? downloadQueue[0].index : 'none'}`);
+        }
+        
+        // Save state for resume functionality
+        savedState = {
+          queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total })),
+          totalFiles: totalFiles,
+          downloadCount: downloadCount,
+          username: username
+        };
+        browser.storage.local.set({ downloadState: savedState }).catch(() => {});
+        
+        // Reset stop flag and cooldown milestone when starting new download
+        shouldStop = false;
+        lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Set to current milestone
+        
+        // Start processing if not already downloading
+        if (!isDownloading) {
+          processDownloadQueue();
+        }
+        
+        sendResponse({ success: true, queued: downloadQueue.length, skipped: skippedCount });
+      } catch (error) {
+        console.error('Error checking existing files:', error);
+        // Fallback: add all files to queue if check fails
+        totalFiles = validUrls.length;
+        validUrls.forEach((url, index) => {
+          downloadQueue.push({
+            url: url,
+            username: username,
+            index: index + 1,
+            total: validUrls.length
+          });
+        });
+        sendResponse({ success: true, queued: downloadQueue.length, skipped: 0 });
       }
-    });
+    })();
     
-    if (skippedCount > 0) {
-      console.log(`Skipped ${skippedCount} already downloaded files, starting from file ${downloadQueue.length > 0 ? downloadQueue[0].index : 'none'}`);
-    }
-    
-    // Save state for resume functionality
-    savedState = {
-      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total })),
-      totalFiles: totalFiles,
-      downloadCount: downloadCount,
-      username: username
-    };
-    browser.storage.local.set({ downloadState: savedState }).catch(() => {});
-    
-    // Reset stop flag and cooldown milestone when starting new download
-    shouldStop = false;
-    lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Set to current milestone
-    
-    // Start processing if not already downloading
-    if (!isDownloading) {
-      processDownloadQueue();
-    }
-    
-    sendResponse({ success: true, queued: downloadQueue.length, skipped: skippedCount });
+    return true; // Keep channel open for async response
   } else if (message.action === 'clearQueue') {
     downloadQueue = [];
     shouldStop = true;
