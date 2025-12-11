@@ -171,8 +171,16 @@
         <option value="100">Recent 100 Media Files</option>
       </select>
     </div>
+
+    <div class="setting-item" style="margin-bottom: 12px;">
+      <label class="setting-label">Filename prefix (username, optional)</label>
+      <input type="text" id="usernameInput" class="setting-input" placeholder="threads-user (optional)">
+    </div>
     
     <button id="downloadBtn" class="button">Download Media</button>
+    <button id="prepareBtn" class="button secondary">Prepare Queue (save links)</button>
+    <button id="loadBtn" class="button secondary">Load Queue File</button>
+    <input type="file" id="queueFileInput" accept=".txt" style="display:none" />
     <button id="resumeBtn" class="button" style="display: none;">Resume Download</button>
     <button id="stopBtn" class="button danger" style="display: none;">Stop Download</button>
     <button id="clearBtn" class="button secondary">Clear Queue</button>

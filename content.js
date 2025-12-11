@@ -11,7 +11,9 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     
     const limit = message.limit || null; // null means all, otherwise number
-    extractAllMedia(limit).then(result => {
+    const prepareOnly = !!message.prepareOnly;
+    const usernameOverride = message.usernameOverride || null;
+    extractAllMedia(limit, prepareOnly, usernameOverride).then(result => {
       sendResponse(result);
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
@@ -23,7 +25,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-async function extractAllMedia(limit = null) {
+async function extractAllMedia(limit = null, prepareOnly = false, usernameOverride = null) {
   isExtracting = true;
   const mediaUrls = new Set();
   let scrollAttempts = 0;
@@ -37,7 +39,7 @@ async function extractAllMedia(limit = null) {
   try {
     // Extract username from URL
     const urlMatch = window.location.pathname.match(/@([^/]+)/);
-    const username = urlMatch ? urlMatch[1] : 'threads-user';
+    const username = usernameOverride || (urlMatch ? urlMatch[1] : 'threads-user');
     
     // Function to extract media from current page
     function extractMediaFromPage() {
@@ -278,6 +280,18 @@ async function extractAllMedia(limit = null) {
     console.log(`Final extraction: ${finalUrls.length} unique media URLs found`);
     if (finalUrls.length > 0) {
       console.log('Sample URLs:', finalUrls.slice(0, 3));
+    }
+    
+    // If prepareOnly, return URLs without sending to background
+    if (prepareOnly) {
+      isExtracting = false;
+      return {
+        success: true,
+        count: finalUrls.length,
+        username: username,
+        urls: finalUrls,
+        limit: limit
+      };
     }
     
     // Send to background script for downloading

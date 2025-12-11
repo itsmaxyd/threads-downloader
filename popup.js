@@ -5,6 +5,9 @@ let statusInterval = null;
 // DOM elements
 const statusDiv = document.getElementById('status');
 const downloadBtn = document.getElementById('downloadBtn');
+const prepareBtn = document.getElementById('prepareBtn');
+const loadBtn = document.getElementById('loadBtn');
+const queueFileInput = document.getElementById('queueFileInput');
 const resumeBtn = document.getElementById('resumeBtn');
 const stopBtn = document.getElementById('stopBtn');
 const clearBtn = document.getElementById('clearBtn');
@@ -12,6 +15,7 @@ const progressDiv = document.getElementById('progress');
 const progressText = document.getElementById('progressText');
 const progressBar = document.getElementById('progressBar');
 const downloadLimitSelect = document.getElementById('downloadLimitSelect');
+const usernameInput = document.getElementById('usernameInput');
 const cooldownInput = document.getElementById('cooldownInput');
 const cooldown100Input = document.getElementById('cooldown100Input');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
@@ -70,6 +74,7 @@ downloadBtn.addEventListener('click', async () => {
     
     const tab = tabs[0];
     const url = tab.url;
+    const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : null;
     
     // Check if we're on a threads page
     if (!url.includes('threads.net') && !url.includes('threads.com')) {
@@ -95,7 +100,9 @@ downloadBtn.addEventListener('click', async () => {
     // Send message to content script with limit
     const response = await browser.tabs.sendMessage(tab.id, { 
       action: 'extractMedia',
-      limit: limit
+      limit: limit,
+      prepareOnly: false,
+      usernameOverride: usernameOverride
     });
     
     if (response.success) {
@@ -130,6 +137,104 @@ downloadBtn.addEventListener('click', async () => {
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Ready';
     progressDiv.style.display = 'none';
+  }
+});
+
+// Prepare queue (save links to file)
+prepareBtn.addEventListener('click', async () => {
+  try {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tabs.length === 0) {
+      alert('No active tab found');
+      return;
+    }
+    const tab = tabs[0];
+    const url = tab.url;
+    const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : null;
+    const limitValue = downloadLimitSelect.value;
+    const limit = limitValue === 'all' ? null : parseInt(limitValue, 10);
+
+    if (!url.includes('threads.net') && !url.includes('threads.com')) {
+      alert('Please navigate to a Threads page first (threads.net or threads.com)');
+      return;
+    }
+
+    statusDiv.className = 'status extracting';
+    statusDiv.textContent = 'Preparing queue...';
+    downloadBtn.disabled = true;
+    prepareBtn.disabled = true;
+
+    const response = await browser.tabs.sendMessage(tab.id, { 
+      action: 'extractMedia',
+      limit: limit,
+      prepareOnly: true,
+      usernameOverride: usernameOverride
+    });
+
+    if (response.success && response.urls && response.urls.length > 0) {
+      const username = response.username || 'threads-user';
+      const text = response.urls.join('\n');
+      const blob = new Blob([text], { type: 'text/plain' });
+      const urlObject = URL.createObjectURL(blob);
+      await browser.downloads.download({
+        url: urlObject,
+        filename: `threads-queues/${username}-queue.txt`,
+        saveAs: true
+      });
+      statusDiv.className = 'status idle';
+      statusDiv.textContent = `Queue saved (${response.urls.length} links)`;
+    } else {
+      alert(`No media found to save. ${response.error ? 'Error: ' + response.error : ''}`);
+      statusDiv.className = 'status idle';
+      statusDiv.textContent = 'Ready';
+    }
+  } catch (error) {
+    console.error('Error preparing queue:', error);
+    alert(`Error: ${error.message}`);
+    statusDiv.className = 'status idle';
+    statusDiv.textContent = 'Ready';
+  } finally {
+    downloadBtn.disabled = false;
+    prepareBtn.disabled = false;
+  }
+});
+
+// Load queue from file
+loadBtn.addEventListener('click', () => {
+  queueFileInput.value = '';
+  queueFileInput.click();
+});
+
+queueFileInput.addEventListener('change', async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith('http'));
+    if (lines.length === 0) {
+      alert('No valid URLs found in the file.');
+      return;
+    }
+    const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : 'threads-user';
+    statusDiv.className = 'status downloading';
+    statusDiv.textContent = `Loading queue file (${lines.length} links)...`;
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
+    downloadBtn.style.display = 'none';
+    stopBtn.style.display = 'block';
+    resumeBtn.style.display = 'none';
+
+    await browser.runtime.sendMessage({
+      action: 'downloadMediaFromList',
+      urls: lines,
+      username: usernameOverride
+    });
+
+    startStatusPolling();
+  } catch (error) {
+    console.error('Error loading queue file:', error);
+    alert(`Error: ${error.message}`);
   }
 });
 
@@ -321,9 +426,9 @@ browser.runtime.onMessage.addListener((message) => {
 browser.runtime.sendMessage({ action: 'getStatus' }).then((response) => {
   if (response.isDownloading) {
     downloadBtn.disabled = true;
-    downloadBtn.style.display = 'none';
-    resumeBtn.style.display = 'none';
-    stopBtn.style.display = 'block';
+      downloadBtn.style.display = 'none';
+      resumeBtn.style.display = 'none';
+      stopBtn.style.display = 'block';
     progressDiv.style.display = 'block';
     if (response.totalFiles > 0) {
       const progress = ((response.totalFiles - response.queueLength) / response.totalFiles) * 100;
