@@ -38,7 +38,8 @@
     "gecko": {
       "id": "threads-downloader@itsmaxyd.github.io",
       "data_collection_permissions": {
-        "required": []
+        "required": ["none"],
+        "optional": []
       }
     }
   }
