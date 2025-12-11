@@ -40,10 +40,12 @@ async function extractAllMedia() {
       // Look for images and videos in various possible locations
       // Threads uses different selectors, so we'll try multiple approaches
       
-      // Method 1: Look for img tags with src or srcset
-      const images = document.querySelectorAll('img[src], img[srcset]');
+      // Method 1: Look for ALL img tags (including those without src initially)
+      const images = document.querySelectorAll('img');
       images.forEach(img => {
-        let url = img.src || img.getAttribute('src');
+        let url = img.src || img.getAttribute('src') || img.getAttribute('data-src');
+        
+        // Try to get URL from srcset
         if (!url) {
           const srcset = img.getAttribute('srcset');
           if (srcset) {
@@ -53,81 +55,118 @@ async function extractAllMedia() {
           }
         }
         
-        if (url && (url.includes('scontent') || url.includes('cdn') || url.includes('fbcdn') || url.includes('instagram') || url.startsWith('http'))) {
-          // For Instagram/Facebook CDN URLs, preserve the original URL with all query parameters
-          // These URLs require query parameters for authentication/validation
-          if (url.includes('instagram') || url.includes('fbcdn') || url.includes('scontent')) {
-            // Use original URL as-is - query parameters are required
-            if (url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i) || url.includes('image') || url.includes('video')) {
-              mediaUrls.add(url);
+        // Check for lazy-loaded images
+        if (!url || url === '' || url.startsWith('data:') || url.startsWith('blob:')) {
+          url = img.getAttribute('data-src') || 
+                img.getAttribute('data-lazy-src') ||
+                img.getAttribute('data-original') ||
+                img.getAttribute('data-url');
+        }
+        
+        // Get computed style background image
+        if (!url || url.startsWith('data:') || url.startsWith('blob:')) {
+          try {
+            const computedStyle = window.getComputedStyle(img);
+            const bgImage = computedStyle.backgroundImage;
+            if (bgImage && bgImage !== 'none') {
+              const match = bgImage.match(/url\(['"]?([^'")]+)['"]?\)/);
+              if (match && match[1] && !match[1].startsWith('data:') && !match[1].startsWith('blob:')) {
+                url = match[1];
+              }
             }
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+        
+        // Process the URL if it's valid
+        if (url && url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+          // For Instagram/Facebook CDN URLs, preserve the original URL with all query parameters
+          if (url.includes('instagram') || url.includes('fbcdn') || url.includes('scontent') || url.includes('cdn')) {
+            // Use original URL as-is - query parameters are required
+            mediaUrls.add(url);
           } else {
-            // For other CDNs, try to clean but keep original as fallback
-            try {
-              const urlObj = new URL(url);
-              // Only remove size constraints from path if safe
-              let path = urlObj.pathname.replace(/_[0-9]+x[0-9]+\.(jpg|jpeg|png|webp|gif)$/i, '.$1');
-              if (!path.match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
-                path = urlObj.pathname;
-              }
-              // Keep query parameters - they might be needed
-              const cleanUrl = urlObj.origin + path + urlObj.search;
-              if (cleanUrl.match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
-                mediaUrls.add(cleanUrl);
-              } else {
-                mediaUrls.add(url); // Fallback to original
-              }
-            } catch (e) {
-              // If URL parsing fails, use original
+            // For other URLs, check if they look like media files
+            if (url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i) || 
+                url.includes('image') || 
+                url.includes('video') ||
+                url.includes('media')) {
               mediaUrls.add(url);
             }
           }
         }
       });
       
-      // Method 2: Look for video tags
-      const videos = document.querySelectorAll('video source, video[src]');
+      // Method 2: Look for video tags and picture elements
+      const videos = document.querySelectorAll('video, video source, picture source');
       videos.forEach(video => {
-        let url = video.src || video.getAttribute('src');
-        if (url && (url.includes('scontent') || url.includes('cdn') || url.includes('fbcdn') || url.includes('instagram'))) {
+        let url = video.src || video.getAttribute('src') || video.getAttribute('data-src');
+        if (!url) {
+          url = video.getAttribute('data-lazy-src') || video.getAttribute('data-original');
+        }
+        
+        if (url && url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:')) {
           // Preserve original URL with query parameters for CDN URLs
-          if (url.match(/\.(mp4|webm|mov)$/i) || url.includes('video')) {
+          if (url.match(/\.(mp4|webm|mov)$/i) || url.includes('video') || url.includes('scontent') || url.includes('cdn') || url.includes('fbcdn') || url.includes('instagram')) {
             mediaUrls.add(url);
           }
         }
       });
       
-      // Method 3: Look for background images in style attributes
-      const elementsWithBg = document.querySelectorAll('[style*="background-image"]');
+      // Method 3: Look for background images in style attributes and computed styles
+      const elementsWithBg = document.querySelectorAll('[style*="background-image"], [style*="backgroundImage"]');
       elementsWithBg.forEach(el => {
         const style = el.getAttribute('style');
         const match = style.match(/url\(['"]?([^'")]+)['"]?\)/);
         if (match) {
           let url = match[1];
-          if (url && (url.includes('scontent') || url.includes('cdn') || url.includes('fbcdn') || url.includes('instagram'))) {
-            // Preserve original URL - query parameters are needed for CDN
-            if (url.match(/\.(jpg|jpeg|png|webp|gif)$/i) || url.includes('image')) {
-              mediaUrls.add(url);
+          if (url && url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+            mediaUrls.add(url);
+          }
+        }
+        
+        // Also check computed style
+        try {
+          const computedStyle = window.getComputedStyle(el);
+          const bgImage = computedStyle.backgroundImage;
+          if (bgImage && bgImage !== 'none') {
+            const bgMatch = bgImage.match(/url\(['"]?([^'")]+)['"]?\)/);
+            if (bgMatch && bgMatch[1] && bgMatch[1].startsWith('http') && !bgMatch[1].startsWith('data:') && !bgMatch[1].startsWith('blob:')) {
+              mediaUrls.add(bgMatch[1]);
             }
           }
+        } catch (e) {
+          // Ignore errors
         }
       });
       
       // Method 4: Look for data attributes that might contain media URLs
-      const dataElements = document.querySelectorAll('[data-src], [data-url], [data-image]');
+      const dataElements = document.querySelectorAll('[data-src], [data-url], [data-image], [data-lazy-src], [data-original]');
       dataElements.forEach(el => {
-        let url = el.getAttribute('data-src') || el.getAttribute('data-url') || el.getAttribute('data-image');
-        if (url && (url.includes('scontent') || url.includes('cdn') || url.includes('fbcdn') || url.includes('instagram'))) {
-          // Preserve original URL with query parameters
-          if (url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i) || url.includes('image') || url.includes('video')) {
-            mediaUrls.add(url);
-          }
+        let url = el.getAttribute('data-src') || 
+                  el.getAttribute('data-url') || 
+                  el.getAttribute('data-image') ||
+                  el.getAttribute('data-lazy-src') ||
+                  el.getAttribute('data-original');
+        
+        if (url && url.startsWith('http') && !url.startsWith('data:') && !url.startsWith('blob:')) {
+          mediaUrls.add(url);
+        }
+      });
+      
+      // Method 5: Look for links that point to media files
+      const mediaLinks = document.querySelectorAll('a[href*=".jpg"], a[href*=".jpeg"], a[href*=".png"], a[href*=".webp"], a[href*=".gif"], a[href*=".mp4"], a[href*=".webm"]');
+      mediaLinks.forEach(link => {
+        const url = link.href || link.getAttribute('href');
+        if (url && url.startsWith('http') && url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i)) {
+          mediaUrls.add(url);
         }
       });
     }
     
     // Initial extraction
     extractMediaFromPage();
+    console.log(`Initial extraction found ${mediaUrls.size} media URLs`);
     
     // Scroll and extract until no new media is found
     while (scrollAttempts < maxScrollAttempts) {
@@ -178,14 +217,23 @@ async function extractAllMedia() {
     const uniqueUrls = mediaArray.filter(url => {
       if (!url || !url.startsWith('http')) return false;
       
+      // Filter out data URLs, blob URLs, and invalid patterns
+      if (url.startsWith('data:') || url.startsWith('blob:') || url.includes('placeholder') || url.includes('avatar')) {
+        return false;
+      }
+      
       // Accept URLs that:
       // 1. Have a file extension
-      // 2. Are from known CDN domains (even without extension, they might be valid)
+      // 2. Are from known CDN domains
+      // 3. Contain media-related keywords
       return url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i) || 
              url.includes('scontent') || 
              url.includes('cdn') || 
              url.includes('fbcdn') ||
-             url.includes('instagram');
+             url.includes('instagram') ||
+             url.includes('/image/') ||
+             url.includes('/video/') ||
+             url.includes('/media/');
     });
     
     // Remove duplicates while preserving query parameters
@@ -209,6 +257,11 @@ async function extractAllMedia() {
         return true;
       }
     });
+    
+    console.log(`Final extraction: ${deduplicatedUrls.length} unique media URLs found`);
+    if (deduplicatedUrls.length > 0) {
+      console.log('Sample URLs:', deduplicatedUrls.slice(0, 3));
+    }
     
     // Send to background script for downloading
     if (deduplicatedUrls.length > 0) {
