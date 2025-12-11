@@ -5,6 +5,7 @@ let statusInterval = null;
 // DOM elements
 const statusDiv = document.getElementById('status');
 const downloadBtn = document.getElementById('downloadBtn');
+const resumeBtn = document.getElementById('resumeBtn');
 const stopBtn = document.getElementById('stopBtn');
 const clearBtn = document.getElementById('clearBtn');
 const progressDiv = document.getElementById('progress');
@@ -132,16 +133,38 @@ downloadBtn.addEventListener('click', async () => {
   }
 });
 
+// Resume button
+resumeBtn.addEventListener('click', async () => {
+  try {
+    const response = await browser.runtime.sendMessage({ action: 'resumeDownload' });
+    if (response.success) {
+      statusDiv.className = 'status downloading';
+      statusDiv.textContent = 'Resuming download...';
+      progressDiv.style.display = 'block';
+      resumeBtn.style.display = 'none';
+      stopBtn.style.display = 'block';
+      downloadBtn.style.display = 'none';
+      startStatusPolling();
+    } else {
+      alert(`Error: ${response.error || 'Failed to resume download'}`);
+    }
+  } catch (error) {
+    console.error('Error resuming download:', error);
+    alert(`Error: ${error.message}`);
+  }
+});
+
 // Stop button
 stopBtn.addEventListener('click', async () => {
   try {
     await browser.runtime.sendMessage({ action: 'stopDownload' });
     statusDiv.className = 'status idle';
-    statusDiv.textContent = 'Download stopped';
+    statusDiv.textContent = 'Download stopped (can be resumed)';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
     downloadBtn.textContent = 'Download Media';
     downloadBtn.style.display = 'block';
+    resumeBtn.style.display = 'block';
     stopBtn.style.display = 'none';
     stopStatusPolling();
     
@@ -203,7 +226,21 @@ function startStatusPolling() {
         } else {
           progressText.textContent = 'Processing...';
         }
+        
+        // Hide resume button when downloading
+        resumeBtn.style.display = 'none';
+        stopBtn.style.display = 'block';
+        downloadBtn.style.display = 'none';
       } else {
+        // Check if there's a saved state for resume
+        if (response.hasSavedState) {
+          resumeBtn.style.display = 'block';
+          downloadBtn.style.display = 'block';
+          stopBtn.style.display = 'none';
+        } else {
+          resumeBtn.style.display = 'none';
+        }
+        
         if (response.queueLength === 0 && !response.isDownloading) {
           statusDiv.className = 'status idle';
           statusDiv.textContent = 'All downloads complete!';
@@ -212,6 +249,7 @@ function startStatusPolling() {
           downloadBtn.textContent = 'Download Media';
           downloadBtn.style.display = 'block';
           stopBtn.style.display = 'none';
+          resumeBtn.style.display = 'none';
           stopStatusPolling();
           
           setTimeout(() => {
@@ -246,11 +284,12 @@ browser.runtime.onMessage.addListener((message) => {
     }
   } else if (message.action === 'downloadStopped') {
     statusDiv.className = 'status idle';
-    statusDiv.textContent = 'Download stopped';
+    statusDiv.textContent = 'Download stopped (can be resumed)';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
     downloadBtn.textContent = 'Download Media';
     downloadBtn.style.display = 'block';
+    resumeBtn.style.display = 'block';
     stopBtn.style.display = 'none';
     stopStatusPolling();
     
@@ -283,6 +322,7 @@ browser.runtime.sendMessage({ action: 'getStatus' }).then((response) => {
   if (response.isDownloading) {
     downloadBtn.disabled = true;
     downloadBtn.style.display = 'none';
+    resumeBtn.style.display = 'none';
     stopBtn.style.display = 'block';
     progressDiv.style.display = 'block';
     if (response.totalFiles > 0) {
@@ -291,6 +331,11 @@ browser.runtime.sendMessage({ action: 'getStatus' }).then((response) => {
       progressText.textContent = `Downloaded: ${response.totalFiles - response.queueLength}/${response.totalFiles} (${response.queueLength} remaining)`;
     }
     startStatusPolling();
+  } else if (response.hasSavedState) {
+    // Show resume button if there's a saved state
+    resumeBtn.style.display = 'block';
+    statusDiv.className = 'status idle';
+    statusDiv.textContent = 'Previous download can be resumed';
   }
 }).catch(() => {});
 

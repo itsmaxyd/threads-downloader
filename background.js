@@ -7,6 +7,8 @@ let downloadCount = 0;
 let lastDownloadTime = 0;
 let cooldownUntil = 0;
 let totalFiles = 0;
+let savedState = null; // For resume functionality
+let activeDownloadId = null; // Track current download
 let settings = {
   cooldownMs: 2000, // Default 2 seconds between downloads
   cooldownAfter100: 120000 // 2 minutes = 120000ms
@@ -21,6 +23,14 @@ browser.storage.local.get(['cooldownMs', 'cooldownAfter100']).then((result) => {
     settings.cooldownAfter100 = result.cooldownAfter100;
   }
 });
+
+// Check for saved download state on startup (for resume)
+browser.storage.local.get(['downloadState']).then((result) => {
+  if (result.downloadState && result.downloadState.queue && result.downloadState.queue.length > 0) {
+    savedState = result.downloadState;
+    console.log('Found saved download state - ready to resume');
+  }
+}).catch(() => {});
 
 // Listen for settings updates
 browser.storage.onChanged.addListener((changes) => {
@@ -102,6 +112,15 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     });
     
+    // Save state for resume functionality
+    savedState = {
+      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total })),
+      totalFiles: totalFiles,
+      downloadCount: downloadCount,
+      username: username
+    };
+    browser.storage.local.set({ downloadState: savedState }).catch(() => {});
+    
     // Reset stop flag when starting new download
     shouldStop = false;
     
@@ -117,19 +136,61 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     isDownloading = false;
     downloadCount = 0;
     totalFiles = 0;
+    savedState = null;
+    browser.storage.local.remove(['downloadState']).catch(() => {});
     sendResponse({ success: true });
   } else if (message.action === 'stopDownload') {
     shouldStop = true;
-    downloadQueue = [];
+    // Keep queue for resume, but stop processing
     sendResponse({ success: true });
-  } else if (message.action === 'getStatus') {
-    sendResponse({
-      isDownloading: isDownloading,
-      queueLength: downloadQueue.length,
-      downloadCount: downloadCount,
-      totalFiles: totalFiles,
-      cooldownUntil: cooldownUntil
+  } else if (message.action === 'resumeDownload') {
+    // Load saved state and resume
+    browser.storage.local.get(['downloadState']).then((result) => {
+      if (result.downloadState) {
+        savedState = result.downloadState;
+        downloadQueue = savedState.queue.map(item => ({
+          url: item.url,
+          username: item.username,
+          index: item.index,
+          total: item.total
+        }));
+        totalFiles = savedState.totalFiles;
+        downloadCount = savedState.downloadCount || 0;
+        shouldStop = false;
+        if (!isDownloading) {
+          processDownloadQueue();
+        }
+        sendResponse({ success: true, resumed: true });
+      } else {
+        sendResponse({ success: false, error: 'No saved state found' });
+      }
+    }).catch(() => {
+      sendResponse({ success: false, error: 'Failed to load saved state' });
     });
+    return true; // Keep channel open for async
+  } else if (message.action === 'getStatus') {
+    // Check if there's a saved state for resume
+    browser.storage.local.get(['downloadState']).then((result) => {
+      const hasSavedState = result.downloadState && result.downloadState.queue && result.downloadState.queue.length > 0;
+      sendResponse({
+        isDownloading: isDownloading,
+        queueLength: downloadQueue.length,
+        downloadCount: downloadCount,
+        totalFiles: totalFiles,
+        cooldownUntil: cooldownUntil,
+        hasSavedState: hasSavedState
+      });
+    }).catch(() => {
+      sendResponse({
+        isDownloading: isDownloading,
+        queueLength: downloadQueue.length,
+        downloadCount: downloadCount,
+        totalFiles: totalFiles,
+        cooldownUntil: cooldownUntil,
+        hasSavedState: false
+      });
+    });
+    return true; // Keep channel open for async
   }
   
   return true; // Keep message channel open for async response
@@ -139,9 +200,8 @@ async function processDownloadQueue() {
   // Check if we should stop
   if (shouldStop) {
     isDownloading = false;
-    shouldStop = false;
-    downloadCount = 0;
-    totalFiles = 0;
+    // Don't clear state when stopped - allow resume
+    // Keep downloadCount and totalFiles for resume
     browser.runtime.sendMessage({ action: 'downloadStopped' }).catch(() => {});
     return;
   }
@@ -150,23 +210,18 @@ async function processDownloadQueue() {
     isDownloading = false;
     downloadCount = 0;
     totalFiles = 0;
+    savedState = null; // Clear saved state when complete
+    browser.storage.local.remove(['downloadState']).catch(() => {});
     browser.runtime.sendMessage({ action: 'downloadComplete' }).catch(() => {});
     return;
   }
   
   isDownloading = true;
   
-  // Check if we're in cooldown period
   const now = Date.now();
-  if (now < cooldownUntil) {
-    const waitTime = cooldownUntil - now;
-    console.log(`In cooldown, waiting ${waitTime}ms`);
-    setTimeout(() => processDownloadQueue(), waitTime);
-    return;
-  }
   
-  // Check if we need cooldown after 100 downloads
-  if (downloadCount > 0 && downloadCount % 100 === 0) {
+  // Check if we need cooldown after 100 downloads (only if queue is not empty)
+  if (downloadCount > 0 && downloadCount % 100 === 0 && downloadQueue.length > 0) {
     console.log(`Reached 100 downloads, starting ${settings.cooldownAfter100}ms cooldown`);
     cooldownUntil = now + settings.cooldownAfter100;
     browser.runtime.sendMessage({ 
@@ -174,6 +229,14 @@ async function processDownloadQueue() {
       duration: settings.cooldownAfter100 
     }).catch(() => {});
     setTimeout(() => processDownloadQueue(), settings.cooldownAfter100);
+    return;
+  }
+  
+  // Check if we're in cooldown period (only if queue is not empty)
+  if (now < cooldownUntil && downloadQueue.length > 0) {
+    const waitTime = cooldownUntil - now;
+    console.log(`In cooldown, waiting ${waitTime}ms`);
+    setTimeout(() => processDownloadQueue(), waitTime);
     return;
   }
   
@@ -237,6 +300,17 @@ async function processDownloadQueue() {
     lastDownloadTime = Date.now();
     
     console.log(`Downloaded ${item.index}/${item.total}: ${filename}`);
+    
+    // Update saved state for resume functionality
+    if (downloadQueue.length > 0 || downloadCount < totalFiles) {
+      savedState = {
+        queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total })),
+        totalFiles: totalFiles,
+        downloadCount: downloadCount,
+        username: item.username
+      };
+      browser.storage.local.set({ downloadState: savedState }).catch(() => {});
+    }
     
     // Notify popup of progress
     browser.runtime.sendMessage({
