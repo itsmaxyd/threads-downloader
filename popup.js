@@ -26,11 +26,22 @@ browser.storage.local.get(['cooldownMs', 'cooldownAfter100']).then((result) => {
 
 // Save settings
 saveSettingsBtn.addEventListener('click', () => {
-  const cooldownMs = parseInt(cooldownInput.value);
-  const cooldownAfter100 = parseInt(cooldown100Input.value);
+  const cooldownMs = parseInt(cooldownInput.value, 10);
+  const cooldownAfter100 = parseInt(cooldown100Input.value, 10);
   
-  if (cooldownMs < 500 || cooldownAfter100 < 60000) {
-    alert('Invalid settings. Cooldown must be at least 500ms, and 100-download cooldown must be at least 60000ms (1 minute).');
+  // Validate inputs
+  if (isNaN(cooldownMs) || isNaN(cooldownAfter100)) {
+    alert('Invalid settings. Please enter valid numbers.');
+    return;
+  }
+  
+  if (cooldownMs < 500 || cooldownMs > 60000) {
+    alert('Invalid settings. Cooldown must be between 500ms and 60000ms.');
+    return;
+  }
+  
+  if (cooldownAfter100 < 60000 || cooldownAfter100 > 3600000) {
+    alert('Invalid settings. 100-download cooldown must be between 60000ms (1 minute) and 3600000ms (1 hour).');
     return;
   }
   

@@ -32,22 +32,73 @@ browser.storage.onChanged.addListener((changes) => {
   }
 });
 
+// Validate URL to prevent malicious downloads
+function isValidMediaUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  
+  try {
+    const urlObj = new URL(url);
+    // Only allow https URLs
+    if (urlObj.protocol !== 'https:') return false;
+    
+    // Only allow specific CDN domains for security
+    const allowedDomains = [
+      'scontent', 'fbcdn', 'instagram', 'cdn', 
+      'threads.net', 'threads.com'
+    ];
+    
+    const hostname = urlObj.hostname.toLowerCase();
+    const isAllowed = allowedDomains.some(domain => hostname.includes(domain));
+    
+    if (!isAllowed) return false;
+    
+    // Check for valid media file extensions
+    const hasValidExtension = url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i);
+    const hasMediaPath = url.includes('/image/') || url.includes('/video/') || url.includes('/media/');
+    
+    return hasValidExtension || hasMediaPath;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Sanitize filename to prevent path traversal
+function sanitizeFilename(name) {
+  // Remove path traversal attempts and dangerous characters
+  return name
+    .replace(/[\/\\\?\*\|<>:"]/g, '_')
+    .replace(/\.\./g, '_')
+    .replace(/^\.+/, '')
+    .substring(0, 100); // Limit length
+}
+
 // Listen for media URLs from content script
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'downloadMedia') {
     const mediaUrls = message.urls || [];
-    const username = message.username || 'threads-user';
+    let username = message.username || 'threads-user';
     
-    console.log(`Received ${mediaUrls.length} media URLs for ${username}`);
+    // Sanitize username to prevent path traversal
+    username = sanitizeFilename(username);
+    
+    // Validate and filter URLs
+    const validUrls = mediaUrls.filter(url => isValidMediaUrl(url));
+    
+    if (validUrls.length === 0) {
+      sendResponse({ success: false, error: 'No valid media URLs found' });
+      return true;
+    }
+    
+    console.log(`Received ${validUrls.length} valid media URLs (${mediaUrls.length - validUrls.length} filtered) for ${username}`);
     
     // Add to download queue
-    totalFiles = mediaUrls.length;
-    mediaUrls.forEach((url, index) => {
+    totalFiles = validUrls.length;
+    validUrls.forEach((url, index) => {
       downloadQueue.push({
         url: url,
         username: username,
         index: index + 1,
-        total: mediaUrls.length
+        total: validUrls.length
       });
     });
     
@@ -156,14 +207,22 @@ async function processDownloadQueue() {
     
     // Create filename with zero-padded index for proper sorting
     const paddedIndex = String(item.index).padStart(String(item.total).length, '0');
-    const filename = `${item.username}_${paddedIndex}_of_${item.total}.${extension}`;
+    const sanitizedUsername = sanitizeFilename(item.username);
+    const filename = `${sanitizedUsername}_${paddedIndex}_of_${item.total}.${extension}`;
+    
+    // Validate URL one more time before downloading
+    if (!isValidMediaUrl(item.url)) {
+      console.error(`Invalid URL skipped: ${item.url}`);
+      setTimeout(() => processDownloadQueue(), 0);
+      return;
+    }
     
     // Download the file
     // Note: For Instagram/Facebook CDN URLs, the original URL with query parameters is required
     try {
       await browser.downloads.download({
         url: item.url,
-        filename: `threads-downloads/${item.username}/${filename}`,
+        filename: `threads-downloads/${sanitizedUsername}/${filename}`,
         saveAs: false,
         // Firefox will automatically include referrer for same-origin requests
       });
