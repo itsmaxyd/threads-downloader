@@ -9,6 +9,7 @@ let cooldownUntil = 0;
 let totalFiles = 0;
 let savedState = null; // For resume functionality
 let activeDownloadId = null; // Track current download
+let lastCooldownMilestone = 0; // Track last milestone where cooldown was applied (100, 200, etc.)
 let settings = {
   cooldownMs: 2000, // Default 2 seconds between downloads
   cooldownAfter100: 120000 // 2 minutes = 120000ms
@@ -82,6 +83,40 @@ function sanitizeFilename(name) {
     .substring(0, 100); // Limit length
 }
 
+// Check for existing downloaded files
+async function checkExistingFiles(username, totalFiles) {
+  const existingFiles = new Set();
+  
+  try {
+    // Get default download directory
+    const downloads = await browser.downloads.search({
+      query: [username],
+      orderBy: ['-startTime']
+    });
+    
+    // Pattern: username_XXX_of_YYY.ext
+    const pattern = new RegExp(`^${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d+)_of_${totalFiles}\\.`);
+    
+    downloads.forEach(download => {
+      if (download.filename) {
+        const match = download.filename.match(pattern);
+        if (match && download.state === 'complete') {
+          const fileIndex = parseInt(match[1], 10);
+          if (fileIndex > 0 && fileIndex <= totalFiles) {
+            existingFiles.add(fileIndex);
+          }
+        }
+      }
+    });
+    
+    console.log(`Found ${existingFiles.size} existing files for ${username}`);
+  } catch (error) {
+    console.error('Error checking existing files:', error);
+  }
+  
+  return existingFiles;
+}
+
 // Listen for media URLs from content script
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'downloadMedia') {
@@ -101,16 +136,32 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     console.log(`Received ${validUrls.length} valid media URLs (${mediaUrls.length - validUrls.length} filtered) for ${username}`);
     
-    // Add to download queue
+    // Check for existing files and filter out already downloaded ones
+    const sanitizedUsername = sanitizeFilename(username);
+    const existingFiles = await checkExistingFiles(sanitizedUsername, validUrls.length);
+    
+    // Add to download queue, skipping already downloaded files
     totalFiles = validUrls.length;
+    let skippedCount = 0;
     validUrls.forEach((url, index) => {
-      downloadQueue.push({
-        url: url,
-        username: username,
-        index: index + 1,
-        total: validUrls.length
-      });
+      const fileIndex = index + 1;
+      // Check if file already exists
+      if (!existingFiles.has(fileIndex)) {
+        downloadQueue.push({
+          url: url,
+          username: username,
+          index: fileIndex,
+          total: validUrls.length
+        });
+      } else {
+        skippedCount++;
+        downloadCount++; // Count skipped files as "downloaded"
+      }
     });
+    
+    if (skippedCount > 0) {
+      console.log(`Skipped ${skippedCount} already downloaded files, starting from file ${downloadQueue.length > 0 ? downloadQueue[0].index : 'none'}`);
+    }
     
     // Save state for resume functionality
     savedState = {
@@ -121,21 +172,23 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     };
     browser.storage.local.set({ downloadState: savedState }).catch(() => {});
     
-    // Reset stop flag when starting new download
+    // Reset stop flag and cooldown milestone when starting new download
     shouldStop = false;
+    lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Set to current milestone
     
     // Start processing if not already downloading
     if (!isDownloading) {
       processDownloadQueue();
     }
     
-    sendResponse({ success: true, queued: mediaUrls.length });
+    sendResponse({ success: true, queued: downloadQueue.length, skipped: skippedCount });
   } else if (message.action === 'clearQueue') {
     downloadQueue = [];
     shouldStop = true;
     isDownloading = false;
     downloadCount = 0;
     totalFiles = 0;
+    lastCooldownMilestone = 0;
     savedState = null;
     browser.storage.local.remove(['downloadState']).catch(() => {});
     sendResponse({ success: true });
@@ -156,6 +209,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }));
         totalFiles = savedState.totalFiles;
         downloadCount = savedState.downloadCount || 0;
+        lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Restore milestone
         shouldStop = false;
         if (!isDownloading) {
           processDownloadQueue();
@@ -201,7 +255,7 @@ async function processDownloadQueue() {
   if (shouldStop) {
     isDownloading = false;
     // Don't clear state when stopped - allow resume
-    // Keep downloadCount and totalFiles for resume
+    // Keep downloadCount, totalFiles, and lastCooldownMilestone for resume
     browser.runtime.sendMessage({ action: 'downloadStopped' }).catch(() => {});
     return;
   }
@@ -210,6 +264,7 @@ async function processDownloadQueue() {
     isDownloading = false;
     downloadCount = 0;
     totalFiles = 0;
+    lastCooldownMilestone = 0;
     savedState = null; // Clear saved state when complete
     browser.storage.local.remove(['downloadState']).catch(() => {});
     browser.runtime.sendMessage({ action: 'downloadComplete' }).catch(() => {});
@@ -220,9 +275,11 @@ async function processDownloadQueue() {
   
   const now = Date.now();
   
-  // Check if we need cooldown after 100 downloads (only if queue is not empty)
-  if (downloadCount > 0 && downloadCount % 100 === 0 && downloadQueue.length > 0) {
-    console.log(`Reached 100 downloads, starting ${settings.cooldownAfter100}ms cooldown`);
+  // Check if we need cooldown after 100 downloads (only if queue is not empty and we haven't already applied cooldown for this milestone)
+  const currentMilestone = Math.floor(downloadCount / 100) * 100;
+  if (downloadCount > 0 && downloadCount % 100 === 0 && downloadQueue.length > 0 && currentMilestone > lastCooldownMilestone) {
+    console.log(`Reached ${downloadCount} downloads, starting ${settings.cooldownAfter100}ms cooldown`);
+    lastCooldownMilestone = currentMilestone;
     cooldownUntil = now + settings.cooldownAfter100;
     browser.runtime.sendMessage({ 
       action: 'cooldownStarted', 
