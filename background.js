@@ -120,6 +120,13 @@ async function checkExistingFiles(username, totalFiles) {
 // Listen for media URLs from content script
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'downloadMedia') {
+    // Reset state for a fresh run
+    downloadQueue = [];
+    downloadCount = 0;
+    totalFiles = 0;
+    cooldownUntil = 0;
+    lastCooldownMilestone = 0;
+
     const mediaUrls = message.urls || [];
     let username = message.username || 'threads-user';
     
