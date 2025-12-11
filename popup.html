@@ -163,7 +163,16 @@
     
     <div id="status" class="status idle">Ready</div>
     
-    <button id="downloadBtn" class="button">Download All Media</button>
+    <div class="setting-item" style="margin-bottom: 12px;">
+      <label class="setting-label">Download Options</label>
+      <select id="downloadLimitSelect" class="setting-input">
+        <option value="all">Download All Media</option>
+        <option value="50">Recent 50 Media Files</option>
+        <option value="100">Recent 100 Media Files</option>
+      </select>
+    </div>
+    
+    <button id="downloadBtn" class="button">Download Media</button>
     <button id="stopBtn" class="button danger" style="display: none;">Stop Download</button>
     <button id="clearBtn" class="button secondary">Clear Queue</button>
     

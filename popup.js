@@ -10,6 +10,7 @@ const clearBtn = document.getElementById('clearBtn');
 const progressDiv = document.getElementById('progress');
 const progressText = document.getElementById('progressText');
 const progressBar = document.getElementById('progressBar');
+const downloadLimitSelect = document.getElementById('downloadLimitSelect');
 const cooldownInput = document.getElementById('cooldownInput');
 const cooldown100Input = document.getElementById('cooldown100Input');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
@@ -86,8 +87,15 @@ downloadBtn.addEventListener('click', async () => {
     statusDiv.className = 'status extracting';
     statusDiv.textContent = 'Extracting media from page...';
     
-    // Send message to content script
-    const response = await browser.tabs.sendMessage(tab.id, { action: 'extractMedia' });
+    // Get download limit from select
+    const limitValue = downloadLimitSelect.value;
+    const limit = limitValue === 'all' ? null : parseInt(limitValue, 10);
+    
+    // Send message to content script with limit
+    const response = await browser.tabs.sendMessage(tab.id, { 
+      action: 'extractMedia',
+      limit: limit
+    });
     
     if (response.success) {
       statusDiv.className = 'status downloading';
@@ -103,7 +111,7 @@ downloadBtn.addEventListener('click', async () => {
     } else {
       alert(`Error: ${response.error || 'Failed to extract media'}`);
       downloadBtn.disabled = false;
-      downloadBtn.textContent = 'Download All Media';
+      downloadBtn.textContent = 'Download Media';
       downloadBtn.style.display = 'block';
       stopBtn.style.display = 'none';
       statusDiv.className = 'status idle';
@@ -115,7 +123,7 @@ downloadBtn.addEventListener('click', async () => {
     console.error('Error:', error);
     alert(`Error: ${error.message}`);
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download All Media';
+    downloadBtn.textContent = 'Download Media';
     downloadBtn.style.display = 'block';
     stopBtn.style.display = 'none';
     statusDiv.className = 'status idle';
@@ -132,7 +140,7 @@ stopBtn.addEventListener('click', async () => {
     statusDiv.textContent = 'Download stopped';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download All Media';
+    downloadBtn.textContent = 'Download Media';
     downloadBtn.style.display = 'block';
     stopBtn.style.display = 'none';
     stopStatusPolling();
@@ -153,7 +161,7 @@ clearBtn.addEventListener('click', async () => {
     statusDiv.textContent = 'Queue cleared';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download All Media';
+    downloadBtn.textContent = 'Download Media';
     downloadBtn.style.display = 'block';
     stopBtn.style.display = 'none';
     stopStatusPolling();
@@ -201,7 +209,7 @@ function startStatusPolling() {
           statusDiv.textContent = 'All downloads complete!';
           progressDiv.style.display = 'none';
           downloadBtn.disabled = false;
-          downloadBtn.textContent = 'Download All Media';
+          downloadBtn.textContent = 'Download Media';
           downloadBtn.style.display = 'block';
           stopBtn.style.display = 'none';
           stopStatusPolling();
@@ -241,7 +249,7 @@ browser.runtime.onMessage.addListener((message) => {
     statusDiv.textContent = 'Download stopped';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download All Media';
+    downloadBtn.textContent = 'Download Media';
     downloadBtn.style.display = 'block';
     stopBtn.style.display = 'none';
     stopStatusPolling();
@@ -259,7 +267,7 @@ browser.runtime.onMessage.addListener((message) => {
     progressBar.style.width = '100%';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download All Media';
+    downloadBtn.textContent = 'Download Media';
     downloadBtn.style.display = 'block';
     stopBtn.style.display = 'none';
     stopStatusPolling();

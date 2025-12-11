@@ -10,7 +10,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     
-    extractAllMedia().then(result => {
+    const limit = message.limit || null; // null means all, otherwise number
+    extractAllMedia(limit).then(result => {
       sendResponse(result);
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
@@ -22,13 +23,16 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-async function extractAllMedia() {
+async function extractAllMedia(limit = null) {
   isExtracting = true;
   const mediaUrls = new Set();
   let scrollAttempts = 0;
   const maxScrollAttempts = 50; // Prevent infinite scrolling
   let lastMediaCount = 0;
   let noNewMediaCount = 0;
+  
+  // If limit is set, we can stop scrolling earlier
+  const shouldLimit = limit !== null && limit > 0;
   
   try {
     // Extract username from URL
@@ -203,6 +207,12 @@ async function extractAllMedia() {
         noNewMediaCount = 0;
       }
       
+      // If we have a limit and reached it, stop scrolling
+      if (shouldLimit && mediaUrls.size >= limit) {
+        console.log(`Reached limit of ${limit} media files, stopping extraction`);
+        break;
+      }
+      
       scrollAttempts++;
       
       // Log progress
@@ -258,16 +268,23 @@ async function extractAllMedia() {
       }
     });
     
-    console.log(`Final extraction: ${deduplicatedUrls.length} unique media URLs found`);
-    if (deduplicatedUrls.length > 0) {
-      console.log('Sample URLs:', deduplicatedUrls.slice(0, 3));
+    // Apply limit if specified (take first N items - most recent)
+    let finalUrls = deduplicatedUrls;
+    if (shouldLimit && deduplicatedUrls.length > limit) {
+      finalUrls = deduplicatedUrls.slice(0, limit);
+      console.log(`Limited to ${limit} most recent media files (found ${deduplicatedUrls.length} total)`);
+    }
+    
+    console.log(`Final extraction: ${finalUrls.length} unique media URLs found`);
+    if (finalUrls.length > 0) {
+      console.log('Sample URLs:', finalUrls.slice(0, 3));
     }
     
     // Send to background script for downloading
-    if (deduplicatedUrls.length > 0) {
+    if (finalUrls.length > 0) {
       browser.runtime.sendMessage({
         action: 'downloadMedia',
-        urls: deduplicatedUrls,
+        urls: finalUrls,
         username: username
       }).catch(err => console.error('Error sending media URLs:', err));
     }
@@ -275,8 +292,9 @@ async function extractAllMedia() {
     isExtracting = false;
     return {
       success: true,
-      count: deduplicatedUrls.length,
-      username: username
+      count: finalUrls.length,
+      username: username,
+      limit: limit
     };
     
   } catch (error) {
