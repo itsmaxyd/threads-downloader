@@ -13,7 +13,8 @@
     "https://threads.com/*"
   ],
   "background": {
-    "scripts": ["background.js"]
+    "scripts": ["background.js"],
+    "persistent": true
   },
   "content_scripts": [
     {
