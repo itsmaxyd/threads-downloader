@@ -131,11 +131,19 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 
     // Send to background script for downloading
     if (finalUrls.length > 0) {
-      browser.runtime.sendMessage({
-        action: 'downloadMedia',
-        urls: finalUrls,
-        username: username
-      }).catch(err => console.error('Error sending media URLs:', err));
+      console.log('Content: Sending', finalUrls.length, 'URLs to background script');
+      try {
+        const bgResponse = await browser.runtime.sendMessage({
+          action: 'downloadMedia',
+          urls: finalUrls,
+          username: username
+        });
+        console.log('Content: Background response:', bgResponse);
+      } catch (err) {
+        console.error('Content: Error sending media URLs:', err);
+      }
+    } else {
+      console.log('Content: No URLs to send to background');
     }
 
     isExtracting = false;
