@@ -174,12 +174,12 @@ prepareBtn.addEventListener('click', async () => {
     if (response.success && response.urls && response.urls.length > 0) {
       const username = response.username || 'threads-user';
       const text = response.urls.join('\n');
-      const blob = new Blob([text], { type: 'text/plain' });
-      const urlObject = URL.createObjectURL(blob);
+      // Use data URL and auto-save like the spec for temp add-on compatibility
+      const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
       await browser.downloads.download({
-        url: urlObject,
+        url: dataUrl,
         filename: `threads-queues/${username}-queue.txt`,
-        saveAs: true
+        saveAs: false
       });
       statusDiv.className = 'status idle';
       statusDiv.textContent = `Queue saved (${response.urls.length} links)`;
