@@ -144,14 +144,26 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 }
 
 function findMediaContainer() {
-  // Look for common Threads media grid selectors
-  return document.querySelector('[data-testid="media-grid"]') ||
+  // Try specific selectors first
+  let container = document.querySelector('[data-testid="media-grid"]') ||
          document.querySelector('.media-grid') ||
          document.querySelector('div[role="grid"]') ||
          document.querySelector('[data-testid="user-profile-media-grid"]') ||
-         document.querySelector('.user-profile-media-grid') ||
-         // Fallback: look for any container with multiple images
-         document.querySelector('div:has(img):has(img ~ img)');
+         document.querySelector('.user-profile-media-grid');
+
+  if (container) return container;
+
+  // Fallback: look for main content area
+  container = document.querySelector('main') ||
+             document.querySelector('[role="main"]') ||
+             document.querySelector('.main') ||
+             document.querySelector('#main');
+
+  if (container) return container;
+
+  // Last resort: use body but be careful
+  console.log('Using document.body as container - may extract unwanted images');
+  return document.body;
 }
 
 function extractMediaUrls(container, urls) {
@@ -188,35 +200,37 @@ function extractHighResUrl(element) {
 }
 
 async function handleInfiniteScroll(container, urls, limit = null) {
-  let lastHeight = 0;
-  let scrollAttempts = 0;
-  const maxScrolls = 20; // Reasonable limit
   let noNewMediaCount = 0;
+  const maxScrolls = 20;
 
-  const scrollInterval = setInterval(() => {
-    const currentHeight = document.body.scrollHeight;
+  for (let i = 0; i < maxScrolls; i++) {
     const currentMediaCount = urls.size;
 
-    if (currentHeight === lastHeight && scrollAttempts >= 3) {
-      clearInterval(scrollInterval);
-      return;
-    }
+    // Scroll to bottom
+    window.scrollTo({
+      top: document.body.scrollHeight,
+      behavior: 'smooth'
+    });
 
-    if (currentHeight === lastHeight) {
-      scrollAttempts++;
-    } else {
-      scrollAttempts = 0;
-      lastHeight = currentHeight;
-      // Extract new media after scroll
-      setTimeout(() => extractMediaUrls(container, urls), 1000);
-    }
+    // Wait for content to load
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Scroll a bit more to trigger lazy loading
+    window.scrollTo({
+      top: document.body.scrollHeight + 100,
+      behavior: 'smooth'
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Extract new media
+    extractMediaUrls(container, urls);
 
     // Check if we found new media
     if (urls.size === currentMediaCount) {
       noNewMediaCount++;
       if (noNewMediaCount >= 3) {
-        clearInterval(scrollInterval);
-        return;
+        break;
       }
     } else {
       noNewMediaCount = 0;
@@ -224,17 +238,9 @@ async function handleInfiniteScroll(container, urls, limit = null) {
 
     // Check limit
     if (limit && urls.size >= limit) {
-      clearInterval(scrollInterval);
-      return;
+      break;
     }
-
-    // Scroll to bottom
-    window.scrollTo(0, currentHeight);
-  }, 2000);
-
-  // Wait for scrolling to complete (max 60 seconds)
-  await new Promise(resolve => setTimeout(resolve, 60000));
-  clearInterval(scrollInterval);
+  }
 }
 
 // Auto-detect if we're on a media page and show indicator

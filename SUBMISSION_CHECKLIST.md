@@ -30,7 +30,7 @@
 
 #### 1. Extension Information
 - **Name**: Threads Media Downloader
-- **Version**: 1.0.0
+- **Version**: 1.1.0
 - **Summary** (max 250 chars): 
   "Download all media files from Threads user media pages with rate limiting, progress tracking, and automatic pagination support."
   
@@ -117,7 +117,7 @@ For questions about privacy, contact the extension developer via GitHub.
 2. **Submit Extension**
    - Go to https://addons.mozilla.org/developers/addon/submit/
    - Choose "On this site"
-   - Upload `threads-downloader-v1.0.0.zip`
+   - Upload `threads-downloader-v1.1.0.zip`
    - Fill in all required fields
    - Upload screenshots
    - Add privacy policy
@@ -138,7 +138,7 @@ For questions about privacy, contact the extension developer via GitHub.
 # Create package
 ./package.sh
 
-# The package will be: threads-downloader-v1.0.0.zip
+# The package will be: threads-downloader-v1.1.0.zip
 # Upload this to Firefox Add-ons
 ```
 
