@@ -47,6 +47,9 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
     // Initial extraction
     extractMediaUrls(mediaContainer, mediaUrls);
     console.log(`Initial extraction found ${mediaUrls.size} media URLs`);
+    if (mediaUrls.size > 0) {
+      console.log('Initial URLs:', Array.from(mediaUrls).slice(0, 5));
+    }
 
     // Handle infinite scroll to load more media
     await handleInfiniteScroll(mediaContainer, mediaUrls, limit);
@@ -55,22 +58,32 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
     const mediaArray = Array.from(mediaUrls);
 
     // Filter out invalid URLs
+    console.log(`Filtering ${mediaArray.length} URLs...`);
     const validUrls = mediaArray.filter(url => {
       if (!url || !url.startsWith('http')) return false;
       // Filter out data URLs, blob URLs, and invalid patterns
-      if (url.startsWith('data:') || url.startsWith('blob:') || url.includes('placeholder') || url.includes('avatar')) {
+      if (url.startsWith('data:') || url.startsWith('blob:') || url.includes('placeholder') || url.includes('avatar') || url.includes('icon')) {
         return false;
       }
-      // Accept valid media URLs
-      return url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i) ||
-             url.includes('scontent') ||
+      // Accept URLs from known domains or with media keywords
+      const isValid = url.includes('scontent') ||
              url.includes('cdn') ||
              url.includes('fbcdn') ||
              url.includes('instagram') ||
+             url.includes('threads') ||
              url.includes('/image/') ||
              url.includes('/video/') ||
-             url.includes('/media/');
+             url.includes('/media/') ||
+             url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
+      if (!isValid) {
+        console.log('Filtered out URL:', url);
+      }
+      return isValid;
     });
+    console.log(`After filtering: ${validUrls.length} valid URLs`);
+    if (validUrls.length > 0) {
+      console.log('Valid URLs:', validUrls.slice(0, 5));
+    }
 
     // Remove duplicates while preserving query parameters
     const seen = new Set();
@@ -167,7 +180,8 @@ function findMediaContainer() {
 }
 
 function extractMediaUrls(container, urls) {
-  const mediaElements = container.querySelectorAll('img, video');
+  // Look for all potential media elements
+  const mediaElements = container.querySelectorAll('img, video, video source, picture source, [data-src], [data-url], [data-image], [data-lazy-src]');
 
   mediaElements.forEach(element => {
     const url = extractHighResUrl(element);
@@ -178,25 +192,29 @@ function extractMediaUrls(container, urls) {
 }
 
 function extractHighResUrl(element) {
-  // Prioritize high-resolution sources
-  if (element.tagName === 'IMG') {
-    // Check srcset for largest image
-    if (element.srcset) {
-      const sources = element.srcset.split(',').map(s => s.trim().split(' '));
-      const largest = sources.reduce((max, curr) => {
-        const width = parseInt(curr[1] || '0');
-        return width > parseInt(max[1] || '0') ? curr : max;
-      });
-      return largest[0];
-    }
+  // Try multiple attributes for media URLs
+  let url = element.dataset.src ||
+            element.dataset.url ||
+            element.dataset.image ||
+            element.dataset.lazySrc ||
+            element.dataset.original ||
+            element.src;
 
-    // Fallback to data-src or src
-    return element.dataset.src || element.src;
-  } else if (element.tagName === 'VIDEO') {
-    return element.src || element.querySelector('source')?.src;
+  // For img elements, try srcset for highest quality
+  if (element.tagName === 'IMG' && !url && element.srcset) {
+    const sources = element.srcset.split(',').map(s => s.trim().split(' '));
+    if (sources.length > 0) {
+      // Get the last (usually highest quality) source
+      url = sources[sources.length - 1][0];
+    }
   }
 
-  return null;
+  // For video/source elements
+  if ((element.tagName === 'VIDEO' || element.tagName === 'SOURCE') && !url) {
+    url = element.src;
+  }
+
+  return url || null;
 }
 
 async function handleInfiniteScroll(container, urls, limit = null) {
