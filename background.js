@@ -262,6 +262,74 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: 'Failed to load saved state' });
     });
     return true; // Keep channel open for async
+  } else if (message.action === 'downloadMediaFromList') {
+    console.log('Background: Received downloadMediaFromList message with', message.urls ? message.urls.length : 0, 'URLs');
+
+    // Reset state for a fresh run
+    downloadQueue = [];
+    downloadCount = 0;
+    totalFiles = 0;
+    cooldownUntil = 0;
+    lastCooldownMilestone = 0;
+
+    const mediaUrls = message.urls || [];
+    let username = message.username || 'threads-user';
+
+    console.log('Background: Processing URLs for username:', username);
+
+    // Sanitize username to prevent path traversal
+    username = sanitizeFilename(username);
+
+    // Validate and filter URLs
+    const validUrls = mediaUrls.filter(url => isValidMediaUrl(url));
+
+    console.log(`Background: Filtered to ${validUrls.length} valid URLs (${mediaUrls.length - validUrls.length} invalid)`);
+
+    if (validUrls.length === 0) {
+      console.log('Background: No valid URLs, sending error response');
+      sendResponse({ success: false, error: 'No valid media URLs found' });
+      return true;
+    }
+
+    console.log(`Background: Starting download for ${validUrls.length} URLs`);
+
+    // Add to download queue
+    totalFiles = validUrls.length;
+    validUrls.forEach((url, index) => {
+      downloadQueue.push({
+        url: url,
+        username: username,
+        index: index + 1,
+        total: validUrls.length
+      });
+    });
+
+    // Save state for resume functionality
+    savedState = {
+      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total })),
+      totalFiles: totalFiles,
+      downloadCount: downloadCount,
+      username: username
+    };
+    browser.storage.local.set({ downloadState: savedState }).catch(() => {});
+
+    // Reset stop flag and cooldown milestone when starting new download
+    shouldStop = false;
+    lastCooldownMilestone = 0;
+
+    console.log('Background: About to start processDownloadQueue, isDownloading:', isDownloading);
+
+    // Start processing if not already downloading
+    if (!isDownloading) {
+      console.log('Background: Calling processDownloadQueue');
+      processDownloadQueue();
+    } else {
+      console.log('Background: Already downloading, not starting new queue');
+    }
+
+    console.log('Background: Sending success response with queued:', downloadQueue.length);
+    sendResponse({ success: true, queued: downloadQueue.length });
+    return true;
   } else if (message.action === 'getStatus') {
     // Check if there's a saved state for resume
     browser.storage.local.get(['downloadState']).then((result) => {
