@@ -120,6 +120,8 @@ async function checkExistingFiles(username, totalFiles) {
 // Listen for media URLs from content script
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'downloadMedia') {
+    console.log('Background: Received downloadMedia message with', message.urls ? message.urls.length : 0, 'URLs');
+
     // Reset state for a fresh run
     downloadQueue = [];
     downloadCount = 0;
@@ -129,19 +131,24 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     const mediaUrls = message.urls || [];
     let username = message.username || 'threads-user';
-    
+
+    console.log('Background: Processing URLs for username:', username);
+
     // Sanitize username to prevent path traversal
     username = sanitizeFilename(username);
-    
+
     // Validate and filter URLs
     const validUrls = mediaUrls.filter(url => isValidMediaUrl(url));
-    
+
+    console.log(`Background: Filtered to ${validUrls.length} valid URLs (${mediaUrls.length - validUrls.length} invalid)`);
+
     if (validUrls.length === 0) {
+      console.log('Background: No valid URLs, sending error response');
       sendResponse({ success: false, error: 'No valid media URLs found' });
       return true;
     }
-    
-    console.log(`Received ${validUrls.length} valid media URLs (${mediaUrls.length - validUrls.length} filtered) for ${username}`);
+
+    console.log(`Background: Starting download for ${validUrls.length} URLs`);
     
     // Handle async file checking
     (async () => {
@@ -185,12 +192,18 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Reset stop flag and cooldown milestone when starting new download
         shouldStop = false;
         lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Set to current milestone
-        
+
+        console.log('Background: About to start processDownloadQueue, isDownloading:', isDownloading);
+
         // Start processing if not already downloading
         if (!isDownloading) {
+          console.log('Background: Calling processDownloadQueue');
           processDownloadQueue();
+        } else {
+          console.log('Background: Already downloading, not starting new queue');
         }
-        
+
+        console.log('Background: Sending success response with queued:', downloadQueue.length);
         sendResponse({ success: true, queued: downloadQueue.length, skipped: skippedCount });
       } catch (error) {
         console.error('Error checking existing files:', error);
@@ -278,8 +291,11 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function processDownloadQueue() {
+  console.log('Background: processDownloadQueue called, queue length:', downloadQueue.length, 'isDownloading:', isDownloading);
+
   // Check if we should stop
   if (shouldStop) {
+    console.log('Background: Stopping download as requested');
     isDownloading = false;
     // Don't clear state when stopped - allow resume
     // Keep downloadCount, totalFiles, and lastCooldownMilestone for resume
@@ -364,17 +380,20 @@ async function processDownloadQueue() {
       return;
     }
     
+    console.log('Background: Attempting to download:', item.url, 'as', filename);
+
     // Download the file
     // Note: For Instagram/Facebook CDN URLs, the original URL with query parameters is required
     try {
-      await browser.downloads.download({
+      const downloadId = await browser.downloads.download({
         url: item.url,
         filename: `threads-downloads/${sanitizedUsername}/${filename}`,
         saveAs: false,
         // Firefox will automatically include referrer for same-origin requests
       });
+      console.log('Background: Download started with ID:', downloadId);
     } catch (downloadError) {
-      console.error(`Download failed for ${item.url}:`, downloadError);
+      console.error(`Background: Download failed for ${item.url}:`, downloadError);
       // Continue with next item instead of stopping
       setTimeout(() => processDownloadQueue(), 0);
       return;
