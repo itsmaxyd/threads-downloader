@@ -45,30 +45,48 @@ browser.storage.onChanged.addListener((changes) => {
 
 // Validate URL to prevent malicious downloads
 function isValidMediaUrl(url) {
-  if (!url || typeof url !== 'string') return false;
+  if (!url || typeof url !== 'string') {
+    console.log('Background: Invalid URL type:', typeof url);
+    return false;
+  }
   
   try {
     const urlObj = new URL(url);
     // Only allow https URLs
-    if (urlObj.protocol !== 'https:') return false;
+    if (urlObj.protocol !== 'https:') {
+      console.log('Background: Non-HTTPS URL rejected:', url);
+      return false;
+    }
     
     // Only allow specific CDN domains for security
     const allowedDomains = [
-      'scontent', 'fbcdn', 'instagram', 'cdn', 
+      'scontent', 'fbcdn', 'instagram', 'cdn',
       'threads.net', 'threads.com'
     ];
     
     const hostname = urlObj.hostname.toLowerCase();
     const isAllowed = allowedDomains.some(domain => hostname.includes(domain));
     
-    if (!isAllowed) return false;
+    if (!isAllowed) {
+      console.log('Background: Domain not allowed:', hostname);
+      return false;
+    }
     
-    // Check for valid media file extensions
-    const hasValidExtension = url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i);
-    const hasMediaPath = url.includes('/image/') || url.includes('/video/') || url.includes('/media/');
+    // Check for valid media file extensions OR query parameters (Instagram CDN uses query params)
+    const pathname = urlObj.pathname.toLowerCase();
+    const hasValidExtension = pathname.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
+    const hasMediaPath = pathname.includes('/image/') || pathname.includes('/video/') || pathname.includes('/media/');
+    const hasQueryParams = urlObj.search.length > 0; // Instagram CDN URLs have query params
     
-    return hasValidExtension || hasMediaPath;
+    const isValid = hasValidExtension || hasMediaPath || (isAllowed && hasQueryParams);
+    
+    if (!isValid) {
+      console.log('Background: URL validation failed - no valid extension, media path, or query params:', url);
+    }
+    
+    return isValid;
   } catch (e) {
+    console.log('Background: URL parsing error:', e, url);
     return false;
   }
 }
