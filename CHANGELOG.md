@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.3] - 2025-12-15
+
+### Fixed
+- Fixed prepare queue blob URL compatibility for temporary Firefox add-ons
+
 ## [1.1.0] - 2025-12-15
 
 ### Fixed
