@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Threads Media Downloader",
-  "version": "1.0.2",
-  "description": "Download all media files from Threads user media pages with rate limiting",
+    "version": "1.1.0",
+    "description": "Download all media files from Threads user media pages with rate limiting",
   "permissions": [
     "downloads",
     "storage",
