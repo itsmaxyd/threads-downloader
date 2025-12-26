@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      width: 320px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    h1 {
+      font-size: 18px;
+      margin-bottom: 16px;
+      color: #333;
+    }
+    
+    .status {
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+    
+    .status.idle {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+    
+    .status.extracting {
+      background: #fff3e0;
+      color: #f57c00;
+    }
+    
+    .status.downloading {
+      background: #e8f5e9;
+      color: #388e3c;
+    }
+    
+    .status.cooldown {
+      background: #fce4ec;
+      color: #c2185b;
+    }
+    
+    .button {
+      width: 100%;
+      padding: 12px;
+      background: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: 12px;
+      transition: background 0.2s;
+    }
+    
+    .button:hover {
+      background: #1565c0;
+    }
+    
+    .button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .button.secondary {
+      background: #757575;
+    }
+    
+    .button.secondary:hover {
+      background: #616161;
+    }
+    
+    .settings {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e0e0e0;
+    }
+    
+    .setting-item {
+      margin-bottom: 12px;
+    }
+    
+    .setting-label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    
+    .setting-input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .progress {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .progress-bar-container {
+      width: 100%;
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    
+    .progress-bar {
+      height: 100%;
+      background: #1976d2;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+    
+    .progress-text {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #666;
+    }
+    
+    .button.danger {
+      background: #d32f2f;
+    }
+    
+    .button.danger:hover {
+      background: #c62828;
+    }
+    
+    .info {
+      font-size: 11px;
+      color: #999;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Threads Downloader</h1>
+    
+    <div id="status" class="status idle">Ready</div>
+    
+    <div class="setting-item" style="margin-bottom: 12px;">
+      <label class="setting-label">Download Options</label>
+      <select id="downloadLimitSelect" class="setting-input">
+        <option value="all">Download All Media</option>
+        <option value="50">Recent 50 Media Files</option>
+        <option value="100">Recent 100 Media Files</option>
+      </select>
+    </div>
+
+    <div class="setting-item" style="margin-bottom: 12px;">
+      <label class="setting-label">Filename prefix (username, optional)</label>
+      <input type="text" id="usernameInput" class="setting-input" placeholder="threads-user (optional)">
+    </div>
+    
+    <button id="downloadBtn" class="button">Download Media</button>
+    <button id="prepareBtn" class="button secondary">Prepare Queue (save links)</button>
+    <button id="loadBtn" class="button secondary">Load Queue File</button>
+    <input type="file" id="queueFileInput" accept=".txt" style="display:none" />
+    <button id="resumeBtn" class="button" style="display: none;">Resume Download</button>
+    <button id="stopBtn" class="button danger" style="display: none;">Stop Download</button>
+    <button id="clearBtn" class="button secondary">Clear Queue</button>
+    
+    <div id="progress" class="progress" style="display: none;">
+      <div id="progressText" class="progress-text"></div>
+      <div class="progress-bar-container">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+    </div>
+    
+    <div class="settings">
+      <div class="setting-item">
+        <label class="setting-label">Cooldown between downloads (ms)</label>
+        <input type="number" id="cooldownInput" class="setting-input" value="2000" min="500" step="500">
+      </div>
+      
+      <div class="setting-item">
+        <label class="setting-label">Cooldown after 100 downloads (ms)</label>
+        <input type="number" id="cooldown100Input" class="setting-input" value="120000" min="60000" step="60000">
+      </div>
+      
+      <button id="saveSettingsBtn" class="button secondary" style="margin-top: 8px;">Save Settings</button>
+    </div>
+    
+    <div class="info">
+      Navigate to a Threads user media page (e.g., threads.com/@username/media) and click "Download All Media"
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
+

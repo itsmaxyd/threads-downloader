@@ -7,7 +7,7 @@ This directory contains the source files for the [Threads Downloader](https://it
 To preview the site locally:
 
 ```bash
-cd pages
+cd website
 python3 -m http.server 8080
 ```
 
@@ -21,7 +21,7 @@ The site is automatically deployed via GitHub Pages when changes are pushed to t
 
 1. Go to repository Settings → Pages
 2. Ensure "Source" is set to "Deploy from a branch"
-3. Set "Branch" to "main" and "Folder" to "/pages"
+3. Set "Branch" to "main" and "Folder" to "/website"
 4. Click Save
 
 ## Pages
