@@ -1,0 +1,8 @@
+title: Threads Downloader
+description: Download media from Threads.net with ease
+baseurl: ""
+url: "https://itsmaxyd.github.io"
+github:
+  repo: itsmaxyd/threads-downloader
+plugins:
+  - jekyll-sitemap
