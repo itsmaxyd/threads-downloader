@@ -1,61 +1,71 @@
-# Threads Media Downloader - Firefox Extension
+# <img src="docs/media/icon/icon_128.png" alt="Threads Media Downloader icon" width="32" /> Threads Media Downloader
 
-A minimal Firefox extension that extracts and downloads all media files from Threads user media pages with rate limiting to avoid blocked requests.
+Download images and videos from Threads profile media pages — with a built-in queue and rate limiting to reduce the chance of blocked requests.
+
+<p align="center">
+  <a href="docs/media/promo_tile_440x280.png">
+    <img src="docs/media/promo_tile_440x280.png" alt="Threads Media Downloader promo" width="440" />
+  </a>
+</p>
+
+## What it does
+
+Threads Media Downloader helps you save media from a Threads profile's media grid (for example: `https://www.threads.net/@username/media`).
+
+It extracts media URLs from the page, auto-scrolls to load more items, then downloads the files to your normal Downloads folder in an organized subfolder.
 
 ## Features
 
-- ✅ Downloads all media files (images and videos) from Threads user media pages
-- ✅ Automatic pagination handling - scrolls through all media
-- ✅ Configurable cooldown between downloads
-- ✅ Automatic 2-minute cooldown after every 100 downloads
-- ✅ Best quality media extraction
-- ✅ Simple, minimal UI
-- ✅ Queue management
+- Download both images and videos from a profile's `/media` page
+- Choose **All media**, or limit to the **recent 50 / 100** items
+- Auto-scroll to load more media (infinite scroll / pagination)
+- Built-in download queue with progress UI
+- Rate limiting:
+  - configurable delay between downloads
+  - configurable cooldown after every 100 downloads
+- Queue utilities:
+  - **Prepare Queue**: save extracted links to a `.txt`
+  - **Load Queue File**: download later from a saved list
+  - **Stop / Resume** downloads
+  - **Clear Queue**
+- Tries to skip files you already downloaded (based on your browser's download history and the extension's filename pattern)
+
+## Screenshots
+
+![Screenshot 1](docs/media/screenshots/firefox/thumb/screenshot_1.jpg)
+![Screenshot 2](docs/media/screenshots/firefox/thumb/screenshot_2.jpg)
+![Screenshot 3](docs/media/screenshots/firefox/thumb/screenshot_3.jpg)
+![Screenshot 4](docs/media/screenshots/firefox/thumb/screenshot_4.jpg)
+![Screenshot 5](docs/media/screenshots/firefox/thumb/screenshot_5.jpg)
 
 ## Installation
 
-1. Open Firefox and navigate to `about:debugging`
-2. Click "This Firefox" in the left sidebar
-3. Click "Load Temporary Add-on..."
-4. Select the `manifest.json` file from this directory
+- For Chrome, install from [Chrome Web Store](https://chromewebstore.google.com/detail/threads-media-downloader/jgiglfccgfjoajfgejioofaiojaljdim?authuser=0&hl=en)
+- For Firefox , install from [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/threads-media-downloader)
 
-## Usage
+## How to use
 
-1. Navigate to a Threads user media page (e.g., `https://www.threads.net/@username/media`)
-2. Click the extension icon in the toolbar
-3. Configure cooldown settings if needed (default: 2 seconds between downloads, 2 minutes after 100 downloads)
-4. Click "Download All Media"
-5. The extension will:
-   - Extract all media URLs from the page
-   - Scroll through pagination to find all media
-   - Queue downloads with rate limiting
-   - Save files to `threads-downloads/username/` in your default download folder
+1. Open a Threads profile media page:
+   - `https://www.threads.net/@username/media` or `https://www.threads.com/@username/media`
+2. Click the extension icon in your browser toolbar.
+3. (Optional) Choose a download option:
+   - **Download All Media**
+   - **Recent 50 Media Files**
+   - **Recent 100 Media Files**
+4. (Optional) Set a **Filename prefix** (useful if the username can't be detected reliably).
+5. Click **Download Media**.
 
-## Settings
+### Where files are saved
 
-- **Cooldown between downloads**: Time in milliseconds to wait between each download (default: 2000ms = 2 seconds)
-- **Cooldown after 100 downloads**: Time in milliseconds to wait after downloading 100 files (default: 120000ms = 2 minutes)
+- Media downloads: `threads-downloads/<username>/` inside your browser's default Downloads folder.
+- Saved queues (link lists): `threads-queues/<username>-queue.txt` inside your browser's default Downloads folder.
 
-## Icons
+### File naming
 
-The extension requires icon files (`icon16.png`, `icon48.png`, `icon128.png`). You can:
-- Create simple placeholder icons
-- Use any 16x16, 48x48, and 128x128 pixel PNG images
-- The extension will work without icons, but Firefox may show a default icon
+Files are named with a predictable, sortable pattern:
 
-## Technical Details
-
-- **Manifest Version**: 2 (Firefox WebExtension)
-- **Permissions**: downloads, storage, tabs, threads.net access
-- **Content Script**: Runs on threads.net pages to extract media
-- **Background Script**: Manages download queue and rate limiting
-- **Popup UI**: Simple interface for triggering downloads and managing settings
-
-## Notes
-
-- The extension respects rate limits to avoid being blocked
-- Speed is not prioritized - completeness is the goal
-- All media is saved with descriptive filenames: `username_index_of_total.extension`
-- The extension handles both images and videos
-- Pagination is handled automatically by scrolling and waiting for content to load
-
+```text
+username_001_of_150.jpg
+username_002_of_150.mp4
+username_003_of_150.webp
+...
