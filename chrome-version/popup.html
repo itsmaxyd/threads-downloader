@@ -453,6 +453,163 @@
     .action-button.danger:hover {
       background: var(--bg-button-danger-hover);
     }
+    
+    /* Resume Dialog Styles */
+    .resume-dialog-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--overlay-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1001;
+      padding: 16px;
+    }
+    
+    .resume-dialog {
+      background: var(--settings-bg);
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 300px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      animation: slideIn 0.3s ease;
+    }
+    
+    .resume-dialog h3 {
+      margin-bottom: 12px;
+      color: var(--text-primary);
+      font-size: 16px;
+      font-weight: 600;
+    }
+    
+    .resume-dialog .resume-count {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+    
+    .resume-dialog .resume-datetime {
+      color: var(--text-primary);
+      font-size: 13px;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    
+    .resume-dialog .resume-info {
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .resume-dialog-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .resume-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .resume-btn-icon {
+      font-size: 12px;
+    }
+    
+    .resume-btn-primary {
+      background: var(--bg-button-primary);
+      color: white;
+    }
+    
+    .resume-btn-primary:hover {
+      background: var(--bg-button-primary-hover);
+      transform: translateY(-1px);
+    }
+    
+    .resume-btn-secondary {
+      background: var(--bg-button-secondary);
+      color: white;
+    }
+    
+    .resume-btn-secondary:hover {
+      background: var(--bg-button-secondary-hover);
+      transform: translateY(-1px);
+    }
+    
+    .resume-btn-cancel {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+    
+    .resume-btn-cancel:hover {
+      background: var(--bg-progress);
+      color: var(--text-primary);
+    }
+    
+    /* Redirect Notification Styles */
+    .redirect-notification {
+      background: var(--bg-status-extracting);
+      border: 1px solid var(--text-status-extracting);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    
+    .redirect-notification p {
+      margin-bottom: 8px;
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+    
+    .redirect-buttons {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+    
+    .redirect-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .redirect-btn-primary {
+      background: var(--bg-button-primary);
+      color: white;
+    }
+    
+    .redirect-btn-primary:hover {
+      background: var(--bg-button-primary-hover);
+    }
+    
+    .redirect-btn-secondary {
+      background: var(--bg-button-secondary);
+      color: white;
+    }
+    
+    .redirect-btn-secondary:hover {
+      background: var(--bg-button-secondary-hover);
+    }
   </style>
 </head>
 <body>
@@ -532,6 +689,13 @@
       </button>
     </div>
     
+    <!-- Export Metadata Button -->
+    <div id="exportMetadataSection" style="display: none; margin-top: 10px;">
+      <button id="exportMetadataBtn" class="action-button primary">
+        Export Metadata
+      </button>
+    </div>
+    
     <input type="file" id="queueFileInput" accept=".txt" class="hidden-input" />
     
     <div id="progress" class="progress" style="display: none;">
@@ -562,6 +726,34 @@
         <div class="setting-item">
           <label class="setting-label">Cooldown after 100 downloads (ms)</label>
           <input type="number" id="cooldown100Input" class="setting-input" value="120000" min="60000" step="60000">
+        </div>
+        
+        <!-- Metadata Export Settings -->
+        <div class="setting-item">
+          <label class="setting-label" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="exportMetadata">
+            Export post metadata
+          </label>
+          <div id="metadataFormatGroup" class="setting-subgroup" style="display: none; margin-top: 8px; padding-left: 24px;">
+            <label class="setting-label" style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+              <input type="radio" name="metadataFormat" value="json" checked>
+              JSON format
+            </label>
+            <label class="setting-label" style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+              <input type="radio" name="metadataFormat" value="csv">
+              CSV format
+            </label>
+          </div>
+        </div>
+        
+        <!-- Profile Page Redirect Settings -->
+        <div class="setting-item">
+          <label class="setting-label">Profile page redirect</label>
+          <select id="redirectSetting" class="setting-input">
+            <option value="notify">Show notification (default)</option>
+            <option value="auto">Auto-redirect</option>
+            <option value="disabled">Disabled</option>
+          </select>
         </div>
         
         <button id="saveSettingsBtn" class="save-settings-btn">Save Settings</button>

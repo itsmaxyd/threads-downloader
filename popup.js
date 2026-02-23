@@ -25,6 +25,227 @@ const themeToggle = document.getElementById('themeToggle');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsOverlay = document.getElementById('settingsOverlay');
 const closeSettings = document.getElementById('closeSettings');
+const exportMetadataCheckbox = document.getElementById('exportMetadata');
+const metadataFormatGroup = document.getElementById('metadataFormatGroup');
+const exportMetadataSection = document.getElementById('exportMetadataSection');
+const exportMetadataBtn = document.getElementById('exportMetadataBtn');
+const redirectSettingSelect = document.getElementById('redirectSetting');
+
+// Store current username for metadata export
+let currentUsername = 'threads-user';
+
+// Store extracted media data for resume functionality
+let pendingMediaData = null;
+
+// Profile page redirect functions
+async function checkProfilePage() {
+  try {
+    const response = await browser.runtime.sendMessage({ action: 'checkProfilePage' });
+    if (response && response.isProfilePage) {
+      showProfileRedirectNotification(response.mediaUrl);
+      return true;
+    }
+  } catch (error) {
+    console.error('Error checking profile page:', error);
+  }
+  return false;
+}
+
+// Get redirect setting from storage
+async function getRedirectSetting() {
+  try {
+    const result = await browser.storage.local.get(['redirectSetting']);
+    return result.redirectSetting || 'notify'; // Default to notify
+  } catch (error) {
+    console.error('Error getting redirect setting:', error);
+    return 'notify';
+  }
+}
+
+// Show notification with redirect option
+async function showProfileRedirectNotification(mediaUrl) {
+  const redirectSetting = await getRedirectSetting();
+  
+  if (redirectSetting === 'auto') {
+    // Auto redirect
+    statusDiv.className = 'status extracting';
+    statusDiv.textContent = 'Redirecting to media page...';
+    await browser.runtime.sendMessage({ action: 'redirectToMedia' });
+    // Close popup after redirect
+    window.close();
+    return;
+  }
+  
+  if (redirectSetting === 'disabled') {
+    // Just show warning
+    statusDiv.className = 'status idle';
+    statusDiv.textContent = '⚠️ Profile page detected. Media downloads work on /media pages.';
+    return;
+  }
+  
+  // Notify - show redirect button
+  const notification = document.createElement('div');
+  notification.className = 'redirect-notification';
+  notification.innerHTML = `
+    <p>You're on a profile page. Redirect to media page?</p>
+    <div class="redirect-buttons">
+      <button id="redirectBtn" class="redirect-btn redirect-btn-primary">Go to Media Page</button>
+      <button id="dismissBtn" class="redirect-btn redirect-btn-secondary">Dismiss</button>
+    </div>
+  `;
+  
+  statusDiv.parentNode.insertBefore(notification, statusDiv.nextSibling);
+  
+  document.getElementById('redirectBtn').onclick = async () => {
+    statusDiv.className = 'status extracting';
+    statusDiv.textContent = 'Redirecting to media page...';
+    notification.remove();
+    await browser.runtime.sendMessage({ action: 'redirectToMedia' });
+    // Close popup after redirect
+    window.close();
+  };
+  
+  document.getElementById('dismissBtn').onclick = () => {
+    notification.remove();
+  };
+}
+
+// Format datetime for display in the resume dialog
+function formatDatetimeDisplay(isoString) {
+  if (!isoString) return 'Unknown';
+  
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return 'Unknown';
+    
+    // Format: "Jan 15, 2024 at 3:45 PM"
+    const options = {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    };
+    return date.toLocaleString('en-US', options);
+  } catch (e) {
+    return 'Unknown';
+  }
+}
+
+// Show resume dialog when existing downloads are found
+function showResumeDialog(fileCount, latestDatetime, username, mediaData) {
+  // Remove any existing dialog
+  const existingDialog = document.getElementById('resumeDialogOverlay');
+  if (existingDialog) {
+    existingDialog.remove();
+  }
+  
+  // Create modal dialog
+  const dialog = document.createElement('div');
+  dialog.id = 'resumeDialogOverlay';
+  dialog.className = 'resume-dialog-overlay';
+  
+  const latestText = latestDatetime 
+    ? `<p class="resume-datetime">Latest download: ${formatDatetimeDisplay(latestDatetime)}</p>`
+    : '';
+  
+  dialog.innerHTML = `
+    <div class="resume-dialog">
+      <h3>Previous Downloads Found</h3>
+      <p class="resume-count">Found ${fileCount} existing file(s) for @${username}.</p>
+      ${latestText}
+      <p class="resume-info">How would you like to proceed?</p>
+      <div class="resume-dialog-buttons">
+        <button id="resumeFromLatest" class="resume-btn resume-btn-primary">
+          <span class="resume-btn-icon">▶</span>
+          Resume from Latest
+        </button>
+        <button id="downloadAll" class="resume-btn resume-btn-secondary">
+          <span class="resume-btn-icon">⬇</span>
+          Download All
+        </button>
+        <button id="cancelDownload" class="resume-btn resume-btn-cancel">
+          <span class="resume-btn-icon">✕</span>
+          Cancel
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(dialog);
+  
+  // Add button handlers
+  document.getElementById('resumeFromLatest').onclick = async () => {
+    dialog.remove();
+    await startDownloadWithResume(mediaData, latestDatetime);
+  };
+  
+  document.getElementById('downloadAll').onclick = async () => {
+    dialog.remove();
+    await startDownloadWithResume(mediaData, null);
+  };
+  
+  document.getElementById('cancelDownload').onclick = () => {
+    dialog.remove();
+    downloadBtn.disabled = false;
+    statusDiv.className = 'status idle';
+    statusDiv.textContent = 'Ready';
+  };
+}
+
+// Start download with optional resume datetime
+async function startDownloadWithResume(mediaData, resumeFromDatetime) {
+  try {
+    statusDiv.className = 'status downloading';
+    if (resumeFromDatetime) {
+      statusDiv.textContent = 'Downloading new media only...';
+    } else {
+      statusDiv.textContent = 'Downloading all media...';
+    }
+    progressDiv.style.display = 'block';
+    progressText.textContent = 'Starting download...';
+    progressBar.style.width = '0%';
+    showDownloadingState();
+    
+    const response = await browser.runtime.sendMessage({
+      action: 'downloadMediaWithResume',
+      mediaItems: mediaData.mediaItems,
+      username: mediaData.username,
+      metadata: mediaData.metadata,
+      resumeFromDatetime: resumeFromDatetime
+    });
+    
+    if (response.success) {
+      if (response.queued === 0 && response.message) {
+        // No new media to download
+        statusDiv.className = 'status idle';
+        statusDiv.textContent = response.message;
+        progressDiv.style.display = 'none';
+        downloadBtn.disabled = false;
+        showDefaultState();
+      } else {
+        statusDiv.textContent = `Downloading ${response.queued} files...`;
+        startStatusPolling();
+      }
+    } else {
+      alert(`Error: ${response.error || 'Failed to start download'}`);
+      downloadBtn.disabled = false;
+      showDefaultState();
+      statusDiv.className = 'status idle';
+      statusDiv.textContent = 'Ready';
+      progressDiv.style.display = 'none';
+    }
+  } catch (error) {
+    console.error('Error starting download:', error);
+    alert(`Error: ${error.message}`);
+    downloadBtn.disabled = false;
+    showDefaultState();
+    statusDiv.className = 'status idle';
+    statusDiv.textContent = 'Ready';
+    progressDiv.style.display = 'none';
+  }
+}
 
 // Theme Management
 function initTheme() {
@@ -92,19 +313,53 @@ settingsOverlay?.addEventListener('click', (e) => {
 });
 
 // Load saved settings
-browser.storage.local.get(['cooldownMs', 'cooldownAfter100']).then((result) => {
+browser.storage.local.get(['cooldownMs', 'cooldownAfter100', 'redirectSetting']).then((result) => {
   if (result.cooldownMs !== undefined) {
     cooldownInput.value = result.cooldownMs;
   }
   if (result.cooldownAfter100 !== undefined) {
     cooldown100Input.value = result.cooldownAfter100;
   }
+  if (result.redirectSetting !== undefined && redirectSettingSelect) {
+    redirectSettingSelect.value = result.redirectSetting;
+  }
 });
+
+// Load metadata settings
+async function loadMetadataSettings() {
+  const settings = await browser.storage.local.get(['exportMetadata', 'metadataFormat']);
+  if (exportMetadataCheckbox) {
+    exportMetadataCheckbox.checked = settings.exportMetadata || false;
+    updateMetadataFormatVisibility();
+  }
+  if (settings.metadataFormat) {
+    const radio = document.querySelector(`input[name="metadataFormat"][value="${settings.metadataFormat}"]`);
+    if (radio) radio.checked = true;
+  }
+}
+
+// Update visibility of metadata format options
+function updateMetadataFormatVisibility() {
+  if (metadataFormatGroup && exportMetadataCheckbox) {
+    metadataFormatGroup.style.display = exportMetadataCheckbox.checked ? 'block' : 'none';
+  }
+}
+
+// Event listener for metadata checkbox
+if (exportMetadataCheckbox) {
+  exportMetadataCheckbox.addEventListener('change', updateMetadataFormatVisibility);
+}
+
+// Load metadata settings on init
+loadMetadataSettings().catch(() => {});
 
 // Save settings
 saveSettingsBtn.addEventListener('click', () => {
   const cooldownMs = parseInt(cooldownInput.value, 10);
   const cooldownAfter100 = parseInt(cooldown100Input.value, 10);
+  const exportMetadata = exportMetadataCheckbox ? exportMetadataCheckbox.checked : false;
+  const metadataFormat = document.querySelector('input[name="metadataFormat"]:checked')?.value || 'json';
+  const redirectSetting = redirectSettingSelect ? redirectSettingSelect.value : 'notify';
   
   // Validate inputs
   if (isNaN(cooldownMs) || isNaN(cooldownAfter100)) {
@@ -124,7 +379,10 @@ saveSettingsBtn.addEventListener('click', () => {
   
   browser.storage.local.set({
     cooldownMs: cooldownMs,
-    cooldownAfter100: cooldownAfter100
+    cooldownAfter100: cooldownAfter100,
+    exportMetadata: exportMetadata,
+    metadataFormat: metadataFormat,
+    redirectSetting: redirectSetting
   }).then(() => {
     saveSettingsBtn.textContent = 'Saved!';
     setTimeout(() => {
@@ -177,15 +435,42 @@ downloadBtn.addEventListener('click', async () => {
     });
     
     if (response.success) {
-      statusDiv.className = 'status downloading';
-      statusDiv.textContent = `Found ${response.count} media files. Downloading...`;
-      progressDiv.style.display = 'block';
-      progressText.textContent = `Queued: ${response.count} files`;
-      progressBar.style.width = '0%';
-      showDownloadingState();
+      // Store username for metadata export
+      currentUsername = response.username || 'threads-user';
       
-      // Start status polling
-      startStatusPolling();
+      // Check for existing downloads before starting
+      statusDiv.textContent = 'Checking for existing downloads...';
+      
+      const existingCheck = await browser.runtime.sendMessage({
+        action: 'checkExistingDownloads',
+        username: currentUsername
+      });
+      
+      if (existingCheck.exists) {
+        // Found existing downloads - show resume dialog
+        statusDiv.className = 'status idle';
+        statusDiv.textContent = 'Ready';
+        
+        // Store media data for resume functionality
+        pendingMediaData = {
+          mediaItems: response.mediaItems || (response.urls ? response.urls.map(url => ({ url, type: 'image', datetime: null })) : []),
+          username: currentUsername,
+          metadata: response.metadata || []
+        };
+        
+        showResumeDialog(existingCheck.count, existingCheck.latestDatetime, currentUsername, pendingMediaData);
+      } else {
+        // No existing downloads - start normal download
+        statusDiv.className = 'status downloading';
+        statusDiv.textContent = `Found ${response.count} media files. Downloading...`;
+        progressDiv.style.display = 'block';
+        progressText.textContent = `Queued: ${response.count} files`;
+        progressBar.style.width = '0%';
+        showDownloadingState();
+        
+        // Start status polling
+        startStatusPolling();
+      }
     } else {
       alert(`Error: ${response.error || 'Failed to extract media'}`);
       downloadBtn.disabled = false;
@@ -239,7 +524,9 @@ prepareBtn.addEventListener('click', async () => {
 
     if (response.success && response.urls && response.urls.length > 0) {
       const username = response.username || 'threads-user';
-      const text = response.urls.join('\n');
+      // Handle both array of strings and array of objects
+      const urlStrings = response.urls.map(item => typeof item === 'string' ? item : item.url);
+      const text = urlStrings.join('\n');
       // Use blob URL like the spec for compatibility
       const blob = new Blob([text], { type: 'text/plain' });
       const blobUrl = URL.createObjectURL(blob);
@@ -462,6 +749,9 @@ browser.runtime.onMessage.addListener((message) => {
     showDefaultState();
     stopStatusPolling();
     
+    // Show export metadata button if enabled
+    checkAndShowExportButton();
+    
     setTimeout(() => {
       statusDiv.textContent = 'Ready';
     }, 3000);
@@ -485,5 +775,50 @@ browser.runtime.sendMessage({ action: 'getStatus' }).then((response) => {
     showStoppedState();
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Previous download can be resumed';
+  } else {
+    // Check if we're on a profile page (not media page)
+    checkProfilePage();
   }
-}).catch(() => {});
+}).catch(() => {
+  // Also check profile page on error
+  checkProfilePage();
+});
+
+// Check if export button should be shown and display it
+async function checkAndShowExportButton() {
+  const settings = await browser.storage.local.get(['exportMetadata']);
+  if (settings.exportMetadata && exportMetadataSection) {
+    // Check if there's metadata available
+    const response = await browser.runtime.sendMessage({ action: 'getMetadata' });
+    if (response && response.success && response.metadata && response.metadata.length > 0) {
+      exportMetadataSection.style.display = 'block';
+    }
+  }
+}
+
+// Export metadata button handler
+if (exportMetadataBtn) {
+  exportMetadataBtn.addEventListener('click', async () => {
+    try {
+      const format = document.querySelector('input[name="metadataFormat"]:checked')?.value || 'json';
+      const response = await browser.runtime.sendMessage({ 
+        action: 'exportMetadata', 
+        format: format,
+        username: currentUsername
+      });
+      
+      if (response && response.success) {
+        statusDiv.className = 'status idle';
+        statusDiv.textContent = `Metadata exported successfully!`;
+        setTimeout(() => {
+          statusDiv.textContent = 'Ready';
+        }, 2000);
+      } else {
+        alert(`Error: ${response?.error || 'Failed to export metadata'}`);
+      }
+    } catch (error) {
+      console.error('Error exporting metadata:', error);
+      alert(`Error: ${error.message}`);
+    }
+  });
+}

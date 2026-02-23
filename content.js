@@ -2,6 +2,34 @@
 
 let isExtracting = false;
 
+// Check if current page is a profile page (not media page)
+function isProfilePage() {
+  const url = window.location.href;
+  // Match /@username but NOT /@username/media or /@username/post/...
+  // Handle query parameters and fragments by checking pathname only
+  const pathname = window.location.pathname;
+  const profilePattern = /^\/@[^/]+$/;
+  return profilePattern.test(pathname);
+}
+
+// Get the media URL for current profile
+function getMediaUrl() {
+  const url = window.location.href;
+  // Convert /@username to /@username/media
+  // Preserve query parameters and fragments
+  const origin = window.location.origin;
+  const pathname = window.location.pathname;
+  const search = window.location.search;
+  const hash = window.location.hash;
+  return `${origin}${pathname}/media${search}${hash}`;
+}
+
+// Redirect to media page
+function redirectToMedia() {
+  const mediaUrl = getMediaUrl();
+  window.location.href = mediaUrl;
+}
+
 // Listen for messages from popup
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'extractMedia') {
@@ -20,6 +48,16 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     
     return true; // Keep message channel open
+  } else if (message.action === 'checkProfilePage') {
+    sendResponse({
+      isProfilePage: isProfilePage(),
+      mediaUrl: getMediaUrl()
+    });
+    return true;
+  } else if (message.action === 'redirectToMedia') {
+    redirectToMedia();
+    sendResponse({ success: true });
+    return true;
   }
   
   return false;
@@ -27,7 +65,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function extractAllMedia(limit = null, prepareOnly = false, usernameOverride = null) {
   isExtracting = true;
-  const mediaUrls = new Set();
+  // Use Map to store URL -> { url, type, datetime } objects
+  const mediaMap = new Map();
+  // Array to store metadata for each post
+  let postMetadata = [];
 
   try {
     // Extract username from URL
@@ -45,21 +86,26 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
     }
 
     // Initial extraction
-    extractMediaUrls(mediaContainer, mediaUrls);
-    console.log(`Initial extraction found ${mediaUrls.size} media URLs`);
-    if (mediaUrls.size > 0) {
-      console.log('Initial URLs:', Array.from(mediaUrls).slice(0, 5));
+    extractMediaUrls(mediaContainer, mediaMap);
+    console.log(`Initial extraction found ${mediaMap.size} media URLs`);
+    if (mediaMap.size > 0) {
+      console.log('Initial URLs:', Array.from(mediaMap.values()).slice(0, 5));
     }
 
     // Handle infinite scroll to load more media
-    await handleInfiniteScroll(mediaContainer, mediaUrls, limit);
+    await handleInfiniteScroll(mediaContainer, mediaMap, limit);
 
-    // Convert Set to Array
-    const mediaArray = Array.from(mediaUrls);
+    // Extract metadata from all posts
+    postMetadata = extractAllMetadata(mediaContainer, username);
+    console.log(`Extracted metadata for ${postMetadata.length} posts`);
+
+    // Convert Map to Array of media objects
+    const mediaArray = Array.from(mediaMap.values());
 
     // Filter out invalid URLs
     console.log(`Filtering ${mediaArray.length} URLs...`);
-    const validUrls = mediaArray.filter(url => {
+    const validMedia = mediaArray.filter(item => {
+      const url = item.url;
       if (!url || !url.startsWith('http')) return false;
       // Filter out data URLs, blob URLs, and invalid patterns
       if (url.startsWith('data:') || url.startsWith('blob:') || url.includes('placeholder') || url.includes('avatar') || url.includes('icon')) {
@@ -80,16 +126,16 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
       }
       return isValid;
     });
-    console.log(`After filtering: ${validUrls.length} valid URLs`);
-    if (validUrls.length > 0) {
-      console.log('Valid URLs:', validUrls.slice(0, 5));
+    console.log(`After filtering: ${validMedia.length} valid URLs`);
+    if (validMedia.length > 0) {
+      console.log('Valid media:', validMedia.slice(0, 5));
     }
 
     // Remove duplicates while preserving query parameters
     const seen = new Set();
-    const deduplicatedUrls = validUrls.filter(url => {
+    const deduplicatedMedia = validMedia.filter(item => {
       try {
-        const urlObj = new URL(url);
+        const urlObj = new URL(item.url);
         const baseUrl = urlObj.origin + urlObj.pathname;
         if (seen.has(baseUrl)) {
           return false;
@@ -97,24 +143,24 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
         seen.add(baseUrl);
         return true;
       } catch (e) {
-        if (seen.has(url)) {
+        if (seen.has(item.url)) {
           return false;
         }
-        seen.add(url);
+        seen.add(item.url);
         return true;
       }
     });
 
     // Apply limit if specified
-    let finalUrls = deduplicatedUrls;
-    if (limit && deduplicatedUrls.length > limit) {
-      finalUrls = deduplicatedUrls.slice(0, limit);
-      console.log(`Limited to ${limit} media files (found ${deduplicatedUrls.length} total)`);
+    let finalMedia = deduplicatedMedia;
+    if (limit && deduplicatedMedia.length > limit) {
+      finalMedia = deduplicatedMedia.slice(0, limit);
+      console.log(`Limited to ${limit} media files (found ${deduplicatedMedia.length} total)`);
     }
 
-    console.log(`Final extraction: ${finalUrls.length} unique media URLs found`);
-    if (finalUrls.length > 0) {
-      console.log('Sample URLs:', finalUrls.slice(0, 3));
+    console.log(`Final extraction: ${finalMedia.length} unique media URLs found`);
+    if (finalMedia.length > 0) {
+      console.log('Sample media:', finalMedia.slice(0, 3));
     }
 
     // If prepareOnly, return URLs without sending to background
@@ -122,21 +168,23 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
       isExtracting = false;
       return {
         success: true,
-        count: finalUrls.length,
+        count: finalMedia.length,
         username: username,
-        urls: finalUrls,
+        urls: finalMedia, // Return array of { url, type, datetime } objects
+        metadata: postMetadata, // Include metadata
         limit: limit
       };
     }
 
     // Send to background script for downloading
-    if (finalUrls.length > 0) {
-      console.log('Content: Sending', finalUrls.length, 'URLs to background script');
+    if (finalMedia.length > 0) {
+      console.log('Content: Sending', finalMedia.length, 'media items to background script');
       try {
         const bgResponse = await browser.runtime.sendMessage({
           action: 'downloadMedia',
-          urls: finalUrls,
-          username: username
+          mediaItems: finalMedia, // Send array of objects with metadata
+          username: username,
+          metadata: postMetadata // Include metadata for storage
         });
         console.log('Content: Background response:', bgResponse);
       } catch (err) {
@@ -149,8 +197,9 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
     isExtracting = false;
     return {
       success: true,
-      count: finalUrls.length,
+      count: finalMedia.length,
       username: username,
+      metadata: postMetadata, // Include metadata in response
       limit: limit
     };
 
@@ -187,16 +236,214 @@ function findMediaContainer() {
   return document.body;
 }
 
-function extractMediaUrls(container, urls) {
+// Extract datetime from a post's article element
+function extractPostDatetime(articleElement) {
+  if (!articleElement) return null;
+  
+  const timeElement = articleElement.querySelector('time[datetime]');
+  if (timeElement) {
+    const datetime = timeElement.getAttribute('datetime');
+    return datetime; // Return ISO 8601 string
+  }
+  return null;
+}
+
+// Extract human-readable datetime from title attribute
+function extractDatetimeDisplay(articleElement) {
+  if (!articleElement) return null;
+  
+  const timeElement = articleElement.querySelector('time[title]');
+  if (timeElement) {
+    return timeElement.getAttribute('title');
+  }
+  return null;
+}
+
+// Extract post permalink
+function extractPermalink(articleElement, username) {
+  if (!articleElement) return null;
+  
+  const link = articleElement.querySelector('a[href*="/post/"]');
+  if (link) {
+    const href = link.getAttribute('href');
+    // Convert /@username/post/ID/media to https://www.threads.com/@username/post/ID
+    const match = href.match(/\/(@[^/]+)\/post\/([^/]+)/);
+    if (match) {
+      return `https://www.threads.com/${match[1]}/post/${match[2]}`;
+    }
+  }
+  return null;
+}
+
+// Extract all media URLs from an article element
+function extractArticleMediaUrls(articleElement) {
+  if (!articleElement) return [];
+  
+  const mediaUrls = [];
+  const mediaElements = articleElement.querySelectorAll('img, video, video source, picture source');
+  
+  mediaElements.forEach(element => {
+    const url = extractHighResUrl(element);
+    if (url && url.startsWith('http')) {
+      // Filter out avatars, icons, and placeholders
+      if (!url.includes('avatar') && !url.includes('icon') && !url.includes('placeholder')) {
+        mediaUrls.push(url);
+      }
+    }
+  });
+  
+  return mediaUrls;
+}
+
+// Extract post content/caption
+function extractPostContent(articleElement) {
+  if (!articleElement) return null;
+  
+  // Find the span with dir="auto" containing the post text
+  const contentSpans = articleElement.querySelectorAll('span[dir="auto"]');
+  let content = '';
+  
+  contentSpans.forEach(span => {
+    // Get direct text content, avoiding nested spans that might be counts
+    const text = span.textContent.trim();
+    // Skip if it's just a number (likely a count) or starts with @ (mention link)
+    if (text && !text.match(/^\d+$/) && !text.startsWith('@')) {
+      content += text + ' ';
+    }
+  });
+  
+  return content.trim() || null;
+}
+
+// Extract like count
+function extractLikeCount(articleElement) {
+  if (!articleElement) return 0;
+  
+  const likeSvg = articleElement.querySelector('svg[aria-label="Like"]');
+  if (likeSvg) {
+    // Find the count in nearby span with class x1o0tod
+    const parentDiv = likeSvg.closest('div');
+    if (parentDiv) {
+      const countSpan = parentDiv.querySelector('span.x1o0tod');
+      if (countSpan) {
+        const count = parseInt(countSpan.textContent, 10);
+        return isNaN(count) ? 0 : count;
+      }
+      // Fallback: look for any span with a number after the SVG
+      const spans = parentDiv.querySelectorAll('span');
+      for (const span of spans) {
+        const text = span.textContent.trim();
+        if (text.match(/^\d+$/)) {
+          return parseInt(text, 10);
+        }
+      }
+    }
+  }
+  return 0;
+}
+
+// Extract reply count
+function extractReplyCount(articleElement) {
+  if (!articleElement) return 0;
+  
+  const replySvg = articleElement.querySelector('svg[aria-label="Reply"]');
+  if (replySvg) {
+    // Find the count in nearby span with class x1o0tod
+    const parentDiv = replySvg.closest('div');
+    if (parentDiv) {
+      const countSpan = parentDiv.querySelector('span.x1o0tod');
+      if (countSpan) {
+        const count = parseInt(countSpan.textContent, 10);
+        return isNaN(count) ? 0 : count;
+      }
+      // Fallback: look for any span with a number after the SVG
+      const spans = parentDiv.querySelectorAll('span');
+      for (const span of spans) {
+        const text = span.textContent.trim();
+        if (text.match(/^\d+$/)) {
+          return parseInt(text, 10);
+        }
+      }
+    }
+  }
+  return 0;
+}
+
+// Extract all metadata from a post article element
+function extractPostMetadata(articleElement, username) {
+  return {
+    username: username,
+    datetime_iso: extractPostDatetime(articleElement),
+    datetime_display: extractDatetimeDisplay(articleElement),
+    post_permalink: extractPermalink(articleElement, username),
+    media_urls: extractArticleMediaUrls(articleElement),
+    post_content: extractPostContent(articleElement),
+    like_count: extractLikeCount(articleElement),
+    reply_count: extractReplyCount(articleElement)
+  };
+}
+
+// Find the parent article element for a media element
+function findParentArticle(element) {
+  let current = element;
+  while (current && current !== document.body) {
+    if (current.tagName === 'ARTICLE' || current.getAttribute('role') === 'article') {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+function extractMediaUrls(container, mediaMap, metadataMap = null) {
   // Look for all potential media elements
   const mediaElements = container.querySelectorAll('img, video, video source, picture source, [data-src], [data-url], [data-image], [data-lazy-src]');
 
   mediaElements.forEach(element => {
     const url = extractHighResUrl(element);
-    if (url && !urls.has(url)) {
-      urls.add(url);
+    if (url && !mediaMap.has(url)) {
+      // Find parent article to extract datetime
+      const article = findParentArticle(element);
+      const datetime = extractPostDatetime(article);
+      
+      // Determine media type
+      const tagName = element.tagName.toUpperCase();
+      let type = 'image';
+      if (tagName === 'VIDEO' || tagName === 'SOURCE') {
+        const src = element.src || element.dataset.src || '';
+        type = src.includes('video') || src.includes('.mp4') || src.includes('.webm') ? 'video' : 'image';
+      }
+      
+      // Store as object with metadata in Map
+      mediaMap.set(url, { url, type, datetime });
     }
   });
+}
+
+// Extract metadata from all unique articles in container
+function extractAllMetadata(container, username) {
+  const metadataArray = [];
+  const seenArticles = new Set();
+  
+  // Find all article elements
+  const articles = container.querySelectorAll('article, [role="article"]');
+  
+  articles.forEach(article => {
+    // Create a unique key for the article based on permalink or content
+    const permalink = extractPermalink(article, username);
+    const key = permalink || article.textContent.substring(0, 100);
+    
+    if (!seenArticles.has(key)) {
+      seenArticles.add(key);
+      const metadata = extractPostMetadata(article, username);
+      // Only add if we have meaningful data
+      if (metadata.media_urls.length > 0 || metadata.post_content) {
+        metadataArray.push(metadata);
+      }
+    }
+  });
+  
+  return metadataArray;
 }
 
 function extractHighResUrl(element) {

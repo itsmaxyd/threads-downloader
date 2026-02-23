@@ -11,10 +11,60 @@ let totalFiles = 0;
 let savedState = null; // For resume functionality
 let activeDownloadId = null; // Track current download
 let lastCooldownMilestone = 0; // Track last milestone where cooldown was applied (100, 200, etc.)
+let usedDatetimes = new Map(); // Track used datetimes per username for collision handling
+let postMetadata = []; // Store metadata for export
 let settings = {
   cooldownMs: 2000, // Default 2 seconds between downloads
   cooldownAfter100: 120000 // 2 minutes = 120000ms
 };
+
+// Format ISO 8601 datetime to local time format: YYYY-MM-DD_HH-M-S
+function formatDatetime(isoString) {
+  if (!isoString) return null;
+  
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return null;
+    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Convert metadata array to CSV format
+function convertToCSV(metadata) {
+  const headers = ['username', 'datetime_iso', 'datetime_display', 'post_permalink', 'media_urls', 'post_content', 'like_count', 'reply_count'];
+  
+  const rows = metadata.map(item => {
+    return headers.map(h => {
+      let value = item[h];
+      // Handle array values (media_urls)
+      if (Array.isArray(value)) {
+        value = value.join('; ');
+      }
+      // Handle null/undefined
+      if (value === null || value === undefined) {
+        return '';
+      }
+      // Convert to string
+      value = String(value);
+      // Escape quotes and wrap in quotes if contains comma, quote, or newline
+      if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
+        value = '"' + value.replace(/"/g, '""') + '"';
+      }
+      return value;
+    }).join(',');
+  });
+  
+  return [headers.join(','), ...rows].join('\n');
+}
 
 // Load settings from storage on startup
 chrome.storage.local.get(['cooldownMs', 'cooldownAfter100'], (result) => {
@@ -138,10 +188,97 @@ async function checkExistingFiles(username, totalFiles) {
   return existingFiles;
 }
 
+// Check for existing downloads in the user's folder (for resume functionality)
+async function checkExistingDownloads(username) {
+  try {
+    // Search for downloads with the username in the path
+    const downloads = await chrome.downloads.search({
+      query: `threads-downloads/${username}`,
+      exists: true
+    });
+    
+    // Filter to only include files in the correct folder
+    const filtered = downloads.filter(download => {
+      if (!download.filename) return false;
+      // Check if the file is in threads-downloads/{username}/ folder
+      const pathPattern = new RegExp(`threads-downloads[/\\\\]${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[/\\\\]`);
+      return pathPattern.test(download.filename);
+    });
+    
+    console.log(`Found ${filtered.length} existing downloads for ${username}`);
+    return filtered;
+  } catch (error) {
+    console.error('Error checking existing downloads:', error);
+    return [];
+  }
+}
+
+// Parse datetime from filename
+// New format: username_YYYY-MM-DD_HH-M-S.ext or username_YYYY-MM-DD_HH-M-S_1.ext
+// Legacy format: username_XXX_of_YYY.ext - no datetime, return null
+function parseDatetimeFromFilename(filename) {
+  if (!filename) return null;
+  
+  // Extract just the filename from the path
+  const basename = filename.split(/[/\\]/).pop();
+  
+  // New format: username_YYYY-MM-DD_HH-M-S.ext or username_YYYY-MM-DD_HH-M-S_1.ext
+  const newFormatMatch = basename.match(/_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/);
+  if (newFormatMatch) {
+    // Parse: YYYY-MM-DD_HH-M-S
+    const datetimeStr = newFormatMatch[1];
+    const [datePart, timePart] = datetimeStr.split('_');
+    const [year, month, day] = datePart.split('-');
+    const [hours, minutes, seconds] = timePart.split('-');
+    
+    // Create date object (month is 0-indexed)
+    const date = new Date(
+      parseInt(year, 10),
+      parseInt(month, 10) - 1,
+      parseInt(day, 10),
+      parseInt(hours, 10),
+      parseInt(minutes, 10),
+      parseInt(seconds, 10)
+    );
+    
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  }
+  
+  // Legacy format: username_XXX_of_YYY.ext - no datetime
+  return null;
+}
+
+// Find latest datetime from existing files
+function findLatestDatetime(files) {
+  let latest = null;
+  
+  for (const file of files) {
+    const dt = parseDatetimeFromFilename(file.filename);
+    if (dt && (!latest || dt > latest)) {
+      latest = dt;
+    }
+  }
+  
+  return latest;
+}
+
+// Filter media items newer than a datetime
+function filterNewerMedia(mediaItems, cutoffDatetime) {
+  if (!cutoffDatetime) return mediaItems;
+  
+  return mediaItems.filter(item => {
+    if (!item.datetime) return true; // Include if no datetime (might be newer)
+    const itemDate = new Date(item.datetime);
+    return itemDate > cutoffDatetime;
+  });
+}
+
 // Listen for media URLs from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'downloadMedia') {
-    console.log('Background: Received downloadMedia message with', message.urls ? message.urls.length : 0, 'URLs');
+    console.log('Background: Received downloadMedia message with', message.mediaItems ? message.mediaItems.length : 0, 'media items');
 
     // Reset state for a fresh run
     downloadQueue = [];
@@ -149,98 +286,118 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     totalFiles = 0;
     cooldownUntil = 0;
     lastCooldownMilestone = 0;
+    usedDatetimes = new Map(); // Reset datetime collision tracking
+    postMetadata = []; // Reset metadata
 
-    const mediaUrls = message.urls || [];
+    // Support both new mediaItems format and legacy urls format
+    const mediaItems = message.mediaItems || (message.urls ? message.urls.map(url => ({ url, type: 'image', datetime: null })) : []);
     let username = message.username || 'threads-user';
 
-    console.log('Background: Processing URLs for username:', username);
+    console.log('Background: Processing media items for username:', username);
 
     // Sanitize username to prevent path traversal
     username = sanitizeFilename(username);
 
-    // Validate and filter URLs
-    const validUrls = mediaUrls.filter(url => isValidMediaUrl(url));
+    // Validate and filter media items
+    const validItems = mediaItems.filter(item => isValidMediaUrl(item.url));
 
-    console.log(`Background: Filtered to ${validUrls.length} valid URLs (${mediaUrls.length - validUrls.length} invalid)`);
+    console.log(`Background: Filtered to ${validItems.length} valid items (${mediaItems.length - validItems.length} invalid)`);
 
-    if (validUrls.length === 0) {
-      console.log('Background: No valid URLs, sending error response');
+    if (validItems.length === 0) {
+      console.log('Background: No valid items, sending error response');
       sendResponse({ success: false, error: 'No valid media URLs found' });
       return true;
     }
 
-    console.log(`Background: Starting download for ${validUrls.length} URLs`);
+    console.log(`Background: Starting download for ${validItems.length} items`);
     
-    // Handle async file checking
-    (async () => {
-      try {
-        // Check for existing files and filter out already downloaded ones
-        const sanitizedUsername = sanitizeFilename(username);
-        const existingFiles = await checkExistingFiles(sanitizedUsername, validUrls.length);
-        
-        // Add to download queue, skipping already downloaded files
-        totalFiles = validUrls.length;
-        let skippedCount = 0;
-        validUrls.forEach((url, index) => {
-          const fileIndex = index + 1;
-          // Check if file already exists
-          if (!existingFiles.has(fileIndex)) {
-            downloadQueue.push({
-              url: url,
-              username: username,
-              index: fileIndex,
-              total: validUrls.length
-            });
-          } else {
-            skippedCount++;
-            downloadCount++; // Count skipped files as "downloaded"
-          }
-        });
-        
-        if (skippedCount > 0) {
-          console.log(`Skipped ${skippedCount} already downloaded files, starting from file ${downloadQueue.length > 0 ? downloadQueue[0].index : 'none'}`);
-        }
-        
-        // Save state for resume functionality
-        savedState = {
-          queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total })),
-          totalFiles: totalFiles,
-          downloadCount: downloadCount,
-          username: username
-        };
-        chrome.storage.local.set({ downloadState: savedState });
-        
-        // Reset stop flag and cooldown milestone when starting new download
-        shouldStop = false;
-        lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Set to current milestone
+    // Store metadata if provided
+    if (message.metadata && Array.isArray(message.metadata)) {
+      postMetadata = message.metadata;
+      console.log(`Background: Stored metadata for ${postMetadata.length} posts`);
+    }
+    
+    // Add to download queue
+    totalFiles = validItems.length;
+    validItems.forEach((item, index) => {
+      downloadQueue.push({
+        url: item.url,
+        username: username,
+        index: index + 1,
+        total: validItems.length,
+        type: item.type || 'image',
+        datetime: item.datetime || null
+      });
+    });
 
-        console.log('Background: About to start processDownloadQueue, isDownloading:', isDownloading);
+    // Save state for resume functionality
+    savedState = {
+      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime })),
+      totalFiles: totalFiles,
+      downloadCount: downloadCount,
+      username: username,
+      metadata: postMetadata
+    };
+    chrome.storage.local.set({ downloadState: savedState });
+    
+    // Reset stop flag and cooldown milestone when starting new download
+    shouldStop = false;
+    lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Set to current milestone
 
-        // Start processing if not already downloading
-        if (!isDownloading) {
-          console.log('Background: Calling processDownloadQueue');
-          processDownloadQueue();
-        } else {
-          console.log('Background: Already downloading, not starting new queue');
-        }
+    console.log('Background: About to start processDownloadQueue, isDownloading:', isDownloading);
 
-        console.log('Background: Sending success response with queued:', downloadQueue.length);
-        sendResponse({ success: true, queued: downloadQueue.length, skipped: skippedCount });
-      } catch (error) {
-        console.error('Error checking existing files:', error);
-        // Fallback: add all files to queue if check fails
-        totalFiles = validUrls.length;
-        validUrls.forEach((url, index) => {
-          downloadQueue.push({
-            url: url,
-            username: username,
-            index: index + 1,
-            total: validUrls.length
-          });
-        });
-        sendResponse({ success: true, queued: downloadQueue.length, skipped: 0 });
-      }
-    })();
+    // Start processing if not already downloading
+    if (!isDownloading) {
+      console.log('Background: Calling processDownloadQueue');
+      processDownloadQueue();
+    } else {
+      console.log('Background: Already downloading, not starting new queue');
+    }
+
+    console.log('Background: Sending success response with queued:', downloadQueue.length);
+    sendResponse({ success: true, queued: downloadQueue.length, skipped: 0 });
+    
+    return true; // Keep channel open for async response
+  } else if (message.action === 'getMetadata') {
+    // Return stored metadata
+    sendResponse({ success: true, metadata: postMetadata });
+    return true;
+  } else if (message.action === 'exportMetadata') {
+    // Export metadata in specified format
+    const format = message.format || 'json';
+    const username = message.username || 'threads-user';
+    
+    if (postMetadata.length === 0) {
+      sendResponse({ success: false, error: 'No metadata available to export' });
+      return true;
+    }
+    
+    let content, mimeType, extension;
+    if (format === 'csv') {
+      content = convertToCSV(postMetadata);
+      mimeType = 'text/csv';
+      extension = 'csv';
+    } else {
+      content = JSON.stringify(postMetadata, null, 2);
+      mimeType = 'application/json';
+      extension = 'json';
+    }
+    
+    // Create download
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    
+    chrome.downloads.download({
+      url: url,
+      filename: `threads-downloads/${username}_metadata.${extension}`,
+      saveAs: false
+    }).then(() => {
+      URL.revokeObjectURL(url);
+      sendResponse({ success: true });
+    }).catch((error) => {
+      URL.revokeObjectURL(url);
+      sendResponse({ success: false, error: error.message });
+    });
     
     return true; // Keep channel open for async response
   } else if (message.action === 'clearQueue') {
@@ -250,6 +407,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     downloadCount = 0;
     totalFiles = 0;
     lastCooldownMilestone = 0;
+    usedDatetimes = new Map(); // Reset datetime collision tracking
+    postMetadata = []; // Reset metadata
     savedState = null;
     chrome.storage.local.remove(['downloadState']);
     sendResponse({ success: true });
@@ -266,11 +425,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           url: item.url,
           username: item.username,
           index: item.index,
-          total: item.total
+          total: item.total,
+          type: item.type || 'image',
+          datetime: item.datetime || null
         }));
         totalFiles = savedState.totalFiles;
         downloadCount = savedState.downloadCount || 0;
         lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Restore milestone
+        usedDatetimes = new Map(); // Reset datetime collision tracking for resume
+        postMetadata = savedState.metadata || []; // Restore metadata
         shouldStop = false;
         if (!isDownloading) {
           processDownloadQueue();
@@ -290,6 +453,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     totalFiles = 0;
     cooldownUntil = 0;
     lastCooldownMilestone = 0;
+    usedDatetimes = new Map(); // Reset datetime collision tracking
+    postMetadata = []; // Reset metadata (no metadata when loading from file)
 
     const mediaUrls = message.urls || [];
     let username = message.username || 'threads-user';
@@ -319,13 +484,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         url: url,
         username: username,
         index: index + 1,
-        total: validUrls.length
+        total: validUrls.length,
+        type: 'image',
+        datetime: null
       });
     });
 
     // Save state for resume functionality
     savedState = {
-      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total })),
+      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime })),
       totalFiles: totalFiles,
       downloadCount: downloadCount,
       username: username
@@ -363,6 +530,159 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     });
     return true; // Keep channel open for async
+  } else if (message.action === 'checkProfilePage') {
+    // Query the active tab to check if it's a profile page
+    (async () => {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs[0]) {
+          const response = await chrome.tabs.sendMessage(tabs[0].id, { action: 'checkProfilePage' });
+          sendResponse(response);
+        } else {
+          sendResponse({ isProfilePage: false });
+        }
+      } catch (error) {
+        console.error('Error checking profile page:', error);
+        sendResponse({ isProfilePage: false });
+      }
+    })();
+    return true; // Keep channel open for async
+  } else if (message.action === 'redirectToMedia') {
+    // Redirect the active tab to media page
+    (async () => {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs[0]) {
+          await chrome.tabs.sendMessage(tabs[0].id, { action: 'redirectToMedia' });
+          sendResponse({ success: true });
+        } else {
+          sendResponse({ success: false, error: 'No active tab' });
+        }
+      } catch (error) {
+        console.error('Error redirecting to media:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true; // Keep channel open for async
+  } else if (message.action === 'checkExistingDownloads') {
+    // Check for existing downloads for a username
+    const username = message.username || 'threads-user';
+    
+    (async () => {
+      try {
+        const existingFiles = await checkExistingDownloads(username);
+        const latestDatetime = findLatestDatetime(existingFiles);
+        sendResponse({
+          exists: existingFiles.length > 0,
+          count: existingFiles.length,
+          latestDatetime: latestDatetime ? latestDatetime.toISOString() : null
+        });
+      } catch (error) {
+        console.error('Error checking existing downloads:', error);
+        sendResponse({
+          exists: false,
+          count: 0,
+          latestDatetime: null
+        });
+      }
+    })();
+    
+    return true; // Keep channel open for async
+  } else if (message.action === 'downloadMediaWithResume') {
+    console.log('Background: Received downloadMediaWithResume message with', message.mediaItems ? message.mediaItems.length : 0, 'media items');
+
+    // Reset state for a fresh run
+    downloadQueue = [];
+    downloadCount = 0;
+    totalFiles = 0;
+    cooldownUntil = 0;
+    lastCooldownMilestone = 0;
+    usedDatetimes = new Map(); // Reset datetime collision tracking
+    postMetadata = []; // Reset metadata
+
+    // Support both new mediaItems format and legacy urls format
+    let mediaItems = message.mediaItems || (message.urls ? message.urls.map(url => ({ url, type: 'image', datetime: null })) : []);
+    let username = message.username || 'threads-user';
+
+    console.log('Background: Processing media items for username:', username);
+
+    // Sanitize username to prevent path traversal
+    username = sanitizeFilename(username);
+
+    // If resumeFromDatetime is provided, filter media items
+    if (message.resumeFromDatetime) {
+      const cutoff = new Date(message.resumeFromDatetime);
+      const originalCount = mediaItems.length;
+      mediaItems = filterNewerMedia(mediaItems, cutoff);
+      console.log(`Background: Filtered to ${mediaItems.length} items newer than ${cutoff.toISOString()} (${originalCount - mediaItems.length} older items skipped)`);
+      
+      if (mediaItems.length === 0) {
+        console.log('Background: No items newer than cutoff, nothing to download');
+        sendResponse({ success: true, queued: 0, skipped: originalCount, message: 'No new media to download' });
+        return true;
+      }
+    }
+
+    // Validate and filter media items
+    const validItems = mediaItems.filter(item => isValidMediaUrl(item.url));
+
+    console.log(`Background: Filtered to ${validItems.length} valid items (${mediaItems.length - validItems.length} invalid)`);
+
+    if (validItems.length === 0) {
+      console.log('Background: No valid items, sending error response');
+      sendResponse({ success: false, error: 'No valid media URLs found' });
+      return true;
+    }
+
+    console.log(`Background: Starting download for ${validItems.length} items`);
+    
+    // Store metadata if provided
+    if (message.metadata && Array.isArray(message.metadata)) {
+      postMetadata = message.metadata;
+      console.log(`Background: Stored metadata for ${postMetadata.length} posts`);
+    }
+    
+    // Add to download queue
+    totalFiles = validItems.length;
+    validItems.forEach((item, index) => {
+      downloadQueue.push({
+        url: item.url,
+        username: username,
+        index: index + 1,
+        total: validItems.length,
+        type: item.type || 'image',
+        datetime: item.datetime || null
+      });
+    });
+
+    // Save state for resume functionality
+    savedState = {
+      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime })),
+      totalFiles: totalFiles,
+      downloadCount: downloadCount,
+      username: username,
+      metadata: postMetadata
+    };
+    chrome.storage.local.set({ downloadState: savedState });
+    
+    // Reset stop flag and cooldown milestone when starting new download
+    shouldStop = false;
+    lastCooldownMilestone = Math.floor(downloadCount / 100) * 100; // Set to current milestone
+
+    console.log('Background: About to start processDownloadQueue, isDownloading:', isDownloading);
+
+    // Start processing if not already downloading
+    if (!isDownloading) {
+      console.log('Background: Calling processDownloadQueue');
+      processDownloadQueue();
+    } else {
+      console.log('Background: Already downloading, not starting new queue');
+    }
+
+    console.log('Background: Sending success response with queued:', downloadQueue.length);
+    sendResponse({ success: true, queued: downloadQueue.length, skipped: 0 });
+    
+    return true; // Keep channel open for async response
   }
   
   return true; // Keep message channel open for async response
@@ -386,6 +706,8 @@ async function processDownloadQueue() {
     downloadCount = 0;
     totalFiles = 0;
     lastCooldownMilestone = 0;
+    usedDatetimes = new Map(); // Reset datetime collision tracking
+    // Note: Keep postMetadata for export after download completes
     savedState = null; // Clear saved state when complete
     chrome.storage.local.remove(['downloadState']);
     chrome.runtime.sendMessage({ action: 'downloadComplete' }).catch(() => {});
@@ -446,10 +768,37 @@ async function processDownloadQueue() {
       extension = 'jpg';
     }
     
-    // Create filename with zero-padded index for proper sorting
-    const paddedIndex = String(item.index).padStart(String(item.total).length, '0');
     const sanitizedUsername = sanitizeFilename(item.username);
-    const filename = `${sanitizedUsername}_${paddedIndex}_of_${item.total}.${extension}`;
+    let filename;
+    
+    // Try to use datetime-based filename
+    const formattedDatetime = formatDatetime(item.datetime);
+    if (formattedDatetime) {
+      // Check for datetime collision
+      if (!usedDatetimes.has(sanitizedUsername)) {
+        usedDatetimes.set(sanitizedUsername, new Set());
+      }
+      const userDatetimes = usedDatetimes.get(sanitizedUsername);
+      
+      if (userDatetimes.has(formattedDatetime)) {
+        // Collision detected - find next available suffix
+        let suffix = 1;
+        while (userDatetimes.has(`${formattedDatetime}_${suffix}`)) {
+          suffix++;
+        }
+        filename = `${sanitizedUsername}_${formattedDatetime}_${suffix}.${extension}`;
+        userDatetimes.add(`${formattedDatetime}_${suffix}`);
+        console.log(`Background: Datetime collision resolved with suffix _${suffix}`);
+      } else {
+        filename = `${sanitizedUsername}_${formattedDatetime}.${extension}`;
+        userDatetimes.add(formattedDatetime);
+      }
+    } else {
+      // Fallback to index-based naming when no datetime available
+      const paddedIndex = String(item.index).padStart(String(item.total).length, '0');
+      filename = `${sanitizedUsername}_${paddedIndex}_of_${item.total}.${extension}`;
+      console.log('Background: No datetime available, using index-based filename');
+    }
     
     // Validate URL one more time before downloading
     if (!isValidMediaUrl(item.url)) {
@@ -484,10 +833,11 @@ async function processDownloadQueue() {
     // Update saved state for resume functionality
     if (downloadQueue.length > 0 || downloadCount < totalFiles) {
       savedState = {
-        queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total })),
+        queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime })),
         totalFiles: totalFiles,
         downloadCount: downloadCount,
-        username: item.username
+        username: item.username,
+        metadata: postMetadata
       };
       chrome.storage.local.set({ downloadState: savedState });
     }
