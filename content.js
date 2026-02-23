@@ -100,7 +100,6 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 
     const mediaContainer = findMediaContainer();
     if (!mediaContainer) {
-      console.log('No media container found');
       isExtracting = false;
       return {
         success: false,
@@ -110,9 +109,7 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 
     // Initial extraction
     extractMediaUrls(mediaContainer, mediaMap);
-    console.log(`Initial extraction found ${mediaMap.size} media URLs`);
     if (mediaMap.size > 0) {
-      console.log('Initial URLs:', Array.from(mediaMap.values()).slice(0, 5));
     }
 
     // Handle infinite scroll to load more media
@@ -120,16 +117,13 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 
     // Extract metadata from all posts
     postMetadata = extractAllMetadata(mediaContainer, username);
-    console.log(`[METADATA DEBUG] Content: Extracted metadata for ${postMetadata.length} posts`);
     if (postMetadata.length > 0) {
-      console.log(`[METADATA DEBUG] Content: Sample metadata:`, JSON.stringify(postMetadata[0], null, 2));
     }
 
     // Convert Map to Array of media objects
     const mediaArray = Array.from(mediaMap.values());
 
     // Filter out invalid URLs
-    console.log(`Filtering ${mediaArray.length} URLs...`);
     const validMedia = mediaArray.filter(item => {
       const url = item.url;
       if (!url || !url.startsWith('http')) return false;
@@ -148,13 +142,10 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
              url.includes('/media/') ||
              url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
       if (!isValid) {
-        console.log('Filtered out URL:', url);
       }
       return isValid;
     });
-    console.log(`After filtering: ${validMedia.length} valid URLs`);
     if (validMedia.length > 0) {
-      console.log('Valid media:', validMedia.slice(0, 5));
     }
 
     // Remove duplicates while preserving query parameters
@@ -181,12 +172,9 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
     let finalMedia = deduplicatedMedia;
     if (limit && deduplicatedMedia.length > limit) {
       finalMedia = deduplicatedMedia.slice(0, limit);
-      console.log(`Limited to ${limit} media files (found ${deduplicatedMedia.length} total)`);
     }
 
-    console.log(`Final extraction: ${finalMedia.length} unique media URLs found`);
     if (finalMedia.length > 0) {
-      console.log('Sample media:', finalMedia.slice(0, 3));
     }
 
     // If prepareOnly, return URLs without sending to background
@@ -204,7 +192,6 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 
     // Send to background script for downloading
     if (finalMedia.length > 0) {
-      console.log('Content: Sending', finalMedia.length, 'media items to background script');
       try {
         const bgResponse = await browser.runtime.sendMessage({
           action: 'downloadMedia',
@@ -212,12 +199,9 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
           username: username,
           metadata: postMetadata // Include metadata for storage
         });
-        console.log('Content: Background response:', bgResponse);
       } catch (err) {
-        console.error('Content: Error sending media URLs:', err);
       }
     } else {
-      console.log('Content: No URLs to send to background');
     }
 
     isExtracting = false;
@@ -231,7 +215,6 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 
   } catch (error) {
     isExtracting = false;
-    console.error('Error extracting media:', error);
     return {
       success: false,
       error: error.message
@@ -248,7 +231,6 @@ function findMediaContainer() {
          document.querySelector('.user-profile-media-grid');
 
   if (container) {
-    console.log('Found media container with specific selector');
     return container;
   }
 
@@ -262,7 +244,6 @@ function findMediaContainer() {
         commonAncestor = commonAncestor.parentElement;
       }
     }
-    console.log(`Found media container via ${timeElements.length} time elements`);
     return commonAncestor;
   }
 
@@ -275,7 +256,6 @@ function findMediaContainer() {
         commonAncestor = commonAncestor.parentElement;
       }
     }
-    console.log(`Found media container via ${fbcdnImages.length} fbcdn images`);
     return commonAncestor;
   }
 
@@ -286,12 +266,10 @@ function findMediaContainer() {
              document.querySelector('#main');
 
   if (container) {
-    console.log('Found media container via main element');
     return container;
   }
 
   // Last resort: use body but be careful
-  console.log('Using document.body as container - may extract unwanted images');
   return document.body;
 }
 
@@ -457,7 +435,6 @@ function findParentArticle(element) {
 function extractMediaUrls(container, mediaMap, metadataMap = null) {
   // APPROACH 1: Use time elements as post anchors to get datetime
   const timeElements = container.querySelectorAll('time[datetime]');
-  console.log(`extractMediaUrls: Found ${timeElements.length} time elements`);
   
   timeElements.forEach(timeElement => {
     const datetime = timeElement.getAttribute('datetime');
@@ -494,7 +471,6 @@ function extractMediaUrls(container, mediaMap, metadataMap = null) {
   
   // APPROACH 2: Scan ALL media elements directly (spec-style extraction)
   const allMediaElements = container.querySelectorAll('img, video, video source, picture source');
-  console.log(`extractMediaUrls: Found ${allMediaElements.length} total media elements`);
   
   allMediaElements.forEach(element => {
     const url = extractHighResUrl(element);
@@ -524,7 +500,6 @@ function extractMediaUrls(container, mediaMap, metadataMap = null) {
     }
   });
   
-  console.log(`extractMediaUrls: Total ${mediaMap.size} media URLs found`);
 }
 
 // Check if an image element is a post image (not profile pic, icon, etc.)
@@ -565,8 +540,6 @@ function extractAllMetadata(container, username) {
   
   // Use time elements as post anchors
   const timeElements = container.querySelectorAll('time[datetime]');
-  console.log(`[METADATA DEBUG] extractAllMetadata: Found ${timeElements.length} time elements`);
-  console.log(`[METADATA DEBUG] Container tagName: ${container.tagName}, className: ${container.className}`);
   
   timeElements.forEach(timeElement => {
     const datetime = timeElement.getAttribute('datetime');
@@ -631,7 +604,6 @@ function extractAllMetadata(container, username) {
             // Handle formats like "559", "1.2K", "10K"
             if (text && (text.match(/^\d+$/) || text.match(/^\d+\.\d+[KkMm]$/))) {
               likeCount = parseCount(text);
-              console.log(`[METADATA DEBUG] Found like count via SVG: ${likeCount}`);
               break;
             }
           }
@@ -647,7 +619,6 @@ function extractAllMetadata(container, username) {
             const text = span.textContent.trim();
             if (text && (text.match(/^\d+$/) || text.match(/^\d+\.\d+[KkMm]$/))) {
               replyCount = parseCount(text);
-              console.log(`[METADATA DEBUG] Found reply count via SVG: ${replyCount}`);
               break;
             }
           }
@@ -665,7 +636,6 @@ function extractAllMetadata(container, username) {
           const countMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*(likes?)?$/i);
           if (countMatch && likeCount === 0) {
             likeCount = parseCount(countMatch[1]);
-            console.log(`[METADATA DEBUG] Found like count via button: ${likeCount}`);
           }
         }
         
@@ -673,7 +643,6 @@ function extractAllMetadata(container, username) {
           const countMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*(replies?)?$/i);
           if (countMatch && replyCount === 0) {
             replyCount = parseCount(countMatch[1]);
-            console.log(`[METADATA DEBUG] Found reply count via button: ${replyCount}`);
           }
         }
       }
@@ -688,19 +657,16 @@ function extractAllMetadata(container, username) {
           const likeMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*likes?$/i);
           if (likeMatch && likeCount === 0) {
             likeCount = parseCount(likeMatch[1]);
-            console.log(`[METADATA DEBUG] Found like count via span pattern: ${likeCount}`);
           }
           
           const replyMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*replies?$/i);
           if (replyMatch && replyCount === 0) {
             replyCount = parseCount(replyMatch[1]);
-            console.log(`[METADATA DEBUG] Found reply count via span pattern: ${replyCount}`);
           }
         }
       }
       
       if (likeCount === 0 && replyCount === 0) {
-        console.log(`[METADATA DEBUG] No engagement counts found for post at ${permalink}`);
       }
     }
     
@@ -717,13 +683,10 @@ function extractAllMetadata(container, username) {
     
     if (mediaUrls.length > 0 || postContent) {
       metadataArray.push(metadata);
-      console.log(`[METADATA DEBUG] Added post #${metadataArray.length}: datetime=${datetime}, mediaUrls=${mediaUrls.length}, permalink=${permalink}`);
     } else {
-      console.log(`[METADATA DEBUG] Skipped post: mediaUrls=${mediaUrls.length}, postContent=${postContent ? 'present' : 'null'}`);
     }
   });
   
-  console.log(`[METADATA DEBUG] extractAllMetadata: Final count: ${metadataArray.length} posts with metadata`);
   return metadataArray;
 }
 
@@ -798,13 +761,11 @@ async function handleInfiniteScroll(container, urls, limit = null) {
     // Extract new media
     extractMediaUrls(container, urls);
 
-    console.log(`Scroll ${i + 1}: Found ${urls.size} media URLs (${urls.size - currentMediaCount} new)`);
 
     // Check if we found new media
     if (urls.size === currentMediaCount) {
       noNewMediaCount++;
       if (noNewMediaCount >= 5) { // Increased from 3
-        console.log('No new media for 5 consecutive scrolls, stopping');
         break;
       }
     } else {
@@ -821,6 +782,5 @@ async function handleInfiniteScroll(container, urls, limit = null) {
 // Auto-detect if we're on a media page and show indicator
 if (window.location.pathname.includes('/media')) {
   // Could add a visual indicator here if needed
-  console.log('Threads media page detected');
 }
 

@@ -5,6 +5,35 @@ let statusInterval = null;
 
 // DOM elements
 const statusDiv = document.getElementById('status');
+
+// Error notification system
+function showError(message, duration = 5000) {
+  // Remove any existing error
+  const existingError = document.getElementById('errorMessage');
+  if (existingError) existingError.remove();
+  
+  // Create error element
+  const errorDiv = document.createElement('div');
+  errorDiv.id = 'errorMessage';
+  errorDiv.className = 'error-notification';
+  errorDiv.innerHTML = `
+    <span class="error-icon">⚠️</span>
+    <span class="error-text">${message}</span>
+    <button class="error-close" onclick="this.parentElement.remove()">✕</button>
+  `;
+  
+  // Insert after status div
+  statusDiv.parentNode.insertBefore(errorDiv, statusDiv.nextSibling);
+  
+  // Auto-remove after duration
+  if (duration > 0) {
+    setTimeout(() => {
+      if (errorDiv.parentNode) {
+        errorDiv.remove();
+      }
+    }, duration);
+  }
+}
 const downloadBtn = document.getElementById('downloadBtn');
 const prepareBtn = document.getElementById('prepareBtn');
 const loadBtn = document.getElementById('loadBtn');
@@ -28,8 +57,6 @@ const settingsOverlay = document.getElementById('settingsOverlay');
 const closeSettings = document.getElementById('closeSettings');
 const exportMetadataCheckbox = document.getElementById('exportMetadata');
 const metadataFormatGroup = document.getElementById('metadataFormatGroup');
-const exportMetadataSection = document.getElementById('exportMetadataSection');
-const exportMetadataBtn = document.getElementById('exportMetadataBtn');
 const redirectSettingSelect = document.getElementById('redirectSetting');
 
 // Store current username for metadata export
@@ -47,7 +74,7 @@ async function checkProfilePage() {
       return true;
     }
   } catch (error) {
-    console.error('Error checking profile page:', error);
+    // Silently fail - not on a Threads page
   }
   return false;
 }
@@ -57,7 +84,6 @@ function getRedirectSetting() {
   return new Promise((resolve) => {
     chrome.storage.local.get(['redirectSetting'], (result) => {
       if (chrome.runtime.lastError) {
-        console.error('Error getting redirect setting:', chrome.runtime.lastError);
         resolve('notify');
         return;
       }
@@ -233,7 +259,7 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
         startStatusPolling();
       }
     } else {
-      alert(`Error: ${response.error || 'Failed to start download'}`);
+      showError(response.error || 'Failed to start download');
       downloadBtn.disabled = false;
       showDefaultState();
       statusDiv.className = 'status idle';
@@ -241,8 +267,7 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
       progressDiv.style.display = 'none';
     }
   } catch (error) {
-    console.error('Error starting download:', error);
-    alert(`Error: ${error.message}`);
+    showError(error.message);
     downloadBtn.disabled = false;
     showDefaultState();
     statusDiv.className = 'status idle';
@@ -254,10 +279,7 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
 // Theme Management
 function initTheme() {
   chrome.storage.local.get(['theme'], (result) => {
-    if (chrome.runtime.lastError) {
-      console.error('Failed to load theme:', chrome.runtime.lastError);
-      return;
-    }
+    if (chrome.runtime.lastError) return;
     const theme = result.theme || 'light';
     document.documentElement.setAttribute('data-theme', theme);
   });
@@ -267,11 +289,7 @@ function toggleTheme() {
   const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
   const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', newTheme);
-  chrome.storage.local.set({ theme: newTheme }, () => {
-    if (chrome.runtime.lastError) {
-      console.error('Failed to save theme:', chrome.runtime.lastError);
-    }
-  });
+  chrome.storage.local.set({ theme: newTheme });
 }
 
 // Settings Panel Management
@@ -372,17 +390,17 @@ saveSettingsBtn.addEventListener('click', () => {
   
   // Validate inputs
   if (isNaN(cooldownMs) || isNaN(cooldownAfter100)) {
-    alert('Invalid settings. Please enter valid numbers.');
+    showError('Invalid settings. Please enter valid numbers.');
     return;
   }
   
   if (cooldownMs < 500 || cooldownMs > 60000) {
-    alert('Invalid settings. Cooldown must be between 500ms and 60000ms.');
+    showError('Cooldown must be between 500ms and 60000ms.');
     return;
   }
   
   if (cooldownAfter100 < 60000 || cooldownAfter100 > 3600000) {
-    alert('Invalid settings. 100-download cooldown must be between 60000ms (1 minute) and 3600000ms (1 hour).');
+    showError('100-download cooldown must be between 1 minute and 1 hour.');
     return;
   }
   
@@ -407,7 +425,7 @@ downloadBtn.addEventListener('click', async () => {
     // Get current active tab
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs.length === 0) {
-      alert('No active tab found');
+      showError('No active tab found');
       return;
     }
     
@@ -417,7 +435,7 @@ downloadBtn.addEventListener('click', async () => {
     
     // Check if we're on a threads page
     if (!url.includes('threads.net') && !url.includes('threads.com')) {
-      alert('Please navigate to a Threads page first (threads.net or threads.com)');
+      showError('Please navigate to a Threads page first (threads.net or threads.com)');
       return;
     }
     
@@ -455,7 +473,6 @@ downloadBtn.addEventListener('click', async () => {
         username: currentUsername
       }, (existingCheck) => {
         if (chrome.runtime.lastError) {
-          console.error('Error checking existing downloads:', chrome.runtime.lastError);
           // Proceed with normal download if check fails
           statusDiv.className = 'status downloading';
           statusDiv.textContent = `Found ${response.count} media files. Downloading...`;
@@ -494,7 +511,7 @@ downloadBtn.addEventListener('click', async () => {
         }
       });
     } else {
-      alert(`Error: ${response.error || 'Failed to extract media'}`);
+      showError(response.error || 'Failed to extract media');
       downloadBtn.disabled = false;
       showDefaultState();
       statusDiv.className = 'status idle';
@@ -503,8 +520,7 @@ downloadBtn.addEventListener('click', async () => {
     }
     
   } catch (error) {
-    console.error('Error:', error);
-    alert(`Error: ${error.message}`);
+    showError(error.message);
     downloadBtn.disabled = false;
     showDefaultState();
     statusDiv.className = 'status idle';
@@ -518,7 +534,7 @@ prepareBtn.addEventListener('click', async () => {
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs.length === 0) {
-      alert('No active tab found');
+      showError('No active tab found');
       return;
     }
     const tab = tabs[0];
@@ -528,7 +544,7 @@ prepareBtn.addEventListener('click', async () => {
     const limit = limitValue === 'all' ? null : parseInt(limitValue, 10);
 
     if (!url.includes('threads.net') && !url.includes('threads.com')) {
-      alert('Please navigate to a Threads page first (threads.net or threads.com)');
+      showError('Please navigate to a Threads page first (threads.net or threads.com)');
       return;
     }
 
@@ -561,13 +577,12 @@ prepareBtn.addEventListener('click', async () => {
       statusDiv.className = 'status idle';
       statusDiv.textContent = `Queue saved (${response.urls.length} links)`;
     } else {
-      alert(`No media found to save. ${response.error ? 'Error: ' + response.error : ''}`);
+      showError(`No media found to save. ${response.error ? response.error : ''}`);
       statusDiv.className = 'status idle';
       statusDiv.textContent = 'Ready';
     }
   } catch (error) {
-    console.error('Error preparing queue:', error);
-    alert(`Error: ${error.message}`);
+    showError(error.message);
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Ready';
   } finally {
@@ -590,7 +605,7 @@ queueFileInput.addEventListener('change', async (event) => {
     const text = await file.text();
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith('http'));
     if (lines.length === 0) {
-      alert('No valid URLs found in the file.');
+      showError('No valid URLs found in the file.');
       return;
     }
     const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : 'threads-user';
@@ -608,8 +623,7 @@ queueFileInput.addEventListener('change', async (event) => {
 
     startStatusPolling();
   } catch (error) {
-    console.error('Error loading queue file:', error);
-    alert(`Error: ${error.message}`);
+    showError(error.message);
   }
 });
 
@@ -624,11 +638,10 @@ resumeBtn.addEventListener('click', async () => {
       showDownloadingState();
       startStatusPolling();
     } else {
-      alert(`Error: ${response.error || 'Failed to resume download'}`);
+      showError(response.error || 'Failed to resume download');
     }
   } catch (error) {
-    console.error('Error resuming download:', error);
-    alert(`Error: ${error.message}`);
+    showError(error.message);
   }
 });
 
@@ -647,7 +660,7 @@ stopBtn.addEventListener('click', async () => {
       statusDiv.textContent = 'Ready';
     }, 2000);
   } catch (error) {
-    console.error('Error stopping download:', error);
+    // Silently fail
   }
 });
 
@@ -666,7 +679,7 @@ clearBtn.addEventListener('click', async () => {
       statusDiv.textContent = 'Ready';
     }, 2000);
   } catch (error) {
-    console.error('Error clearing queue:', error);
+    // Silently fail
   }
 });
 
@@ -723,7 +736,7 @@ function startStatusPolling() {
         }
       }
     } catch (error) {
-      console.error('Error getting status:', error);
+      // Silently fail during polling
     }
   }, 1000);
 }
@@ -771,8 +784,7 @@ chrome.runtime.onMessage.addListener((message) => {
     showDefaultState();
     stopStatusPolling();
     
-    // Show export metadata button if enabled
-    checkAndShowExportButton();
+    // Metadata is auto-exported, no need to show export button
     
     setTimeout(() => {
       statusDiv.textContent = 'Ready';
@@ -783,8 +795,6 @@ chrome.runtime.onMessage.addListener((message) => {
 // Initial status check
 chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
   if (chrome.runtime.lastError) {
-    console.error('Error getting initial status:', chrome.runtime.lastError);
-    // Also check profile page on error
     checkProfilePage();
     return;
   }
@@ -810,43 +820,3 @@ chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
   }
 });
 
-// Check if export button should be shown and display it
-function checkAndShowExportButton() {
-  chrome.storage.local.get(['exportMetadata'], (result) => {
-    if (result.exportMetadata && exportMetadataSection) {
-      // Check if there's metadata available
-      chrome.runtime.sendMessage({ action: 'getMetadata' }, (response) => {
-        if (response && response.success && response.metadata && response.metadata.length > 0) {
-          exportMetadataSection.style.display = 'block';
-        }
-      });
-    }
-  });
-}
-
-// Export metadata button handler
-if (exportMetadataBtn) {
-  exportMetadataBtn.addEventListener('click', async () => {
-    try {
-      const format = document.querySelector('input[name="metadataFormat"]:checked')?.value || 'json';
-      const response = await chrome.runtime.sendMessage({ 
-        action: 'exportMetadata', 
-        format: format,
-        username: currentUsername
-      });
-      
-      if (response && response.success) {
-        statusDiv.className = 'status idle';
-        statusDiv.textContent = `Metadata exported successfully!`;
-        setTimeout(() => {
-          statusDiv.textContent = 'Ready';
-        }, 2000);
-      } else {
-        alert(`Error: ${response?.error || 'Failed to export metadata'}`);
-      }
-    } catch (error) {
-      console.error('Error exporting metadata:', error);
-      alert(`Error: ${error.message}`);
-    }
-  });
-}

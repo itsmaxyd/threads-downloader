@@ -7,7 +7,7 @@ A browser extension to download media from Threads.net user media pages.
 - **Download all media** from any Threads user's media page
 - **Datetime-based filenames** - Consistent naming with `{username}_{YYYY-MM-DD_HH-M-S}.{ext}` format
 - **Resume downloads** - Detects existing files and offers to continue from where you left off
-- **Metadata export** - Export post data in JSON or CSV format
+- **Auto-export metadata** - Automatically saves post metadata as JSON or CSV when downloads complete
 - **Auto-redirect** - Automatically redirect from profile to media page
 - **Mobile support** - Works on Firefox for Android and Kiwi Browser
 
@@ -56,7 +56,7 @@ A browser extension to download media from Threads.net user media pages.
 
 - **Cooldown between downloads**: Time to wait between each download (default: 2 seconds)
 - **Cooldown after 100 downloads**: Longer pause after batch of 100 (default: 2 minutes)
-- **Export metadata**: Enable to collect post metadata
+- **Export metadata**: Enable to automatically save post metadata when downloads finish
 - **Metadata format**: Choose JSON or CSV
 - **Profile page redirect**: Behavior when on profile page (notify/auto/disabled)
 

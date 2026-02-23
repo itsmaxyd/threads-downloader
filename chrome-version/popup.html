@@ -610,6 +610,47 @@
     .redirect-btn-secondary:hover {
       background: var(--bg-button-secondary-hover);
     }
+
+    /* Error Notification */
+    .error-notification {
+      background: #fee2e2;
+      border: 1px solid #ef4444;
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #991b1b;
+    }
+
+    .error-icon {
+      font-size: 16px;
+    }
+
+    .error-text {
+      flex: 1;
+      font-size: 13px;
+    }
+
+    .error-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      color: #991b1b;
+      padding: 0;
+    }
+
+    [data-theme="dark"] .error-notification {
+      background: #3b1111;
+      border-color: #dc2626;
+      color: #fca5a5;
+    }
+
+    [data-theme="dark"] .error-close {
+      color: #fca5a5;
+    }
   </style>
 </head>
 <body>
@@ -689,12 +730,6 @@
       </button>
     </div>
     
-    <!-- Export Metadata Button -->
-    <div id="exportMetadataSection" style="display: none; margin-top: 10px;">
-      <button id="exportMetadataBtn" class="action-button primary">
-        Export Metadata
-      </button>
-    </div>
     
     <input type="file" id="queueFileInput" accept=".txt" class="hidden-input" />
     
