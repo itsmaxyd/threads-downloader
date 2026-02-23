@@ -215,14 +215,44 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 }
 
 function findMediaContainer() {
-  // Try specific selectors first
+  // Try specific selectors first (keep for backward compatibility)
   let container = document.querySelector('[data-testid="media-grid"]') ||
          document.querySelector('.media-grid') ||
          document.querySelector('div[role="grid"]') ||
          document.querySelector('[data-testid="user-profile-media-grid"]') ||
          document.querySelector('.user-profile-media-grid');
 
-  if (container) return container;
+  if (container) {
+    console.log('Found media container with specific selector');
+    return container;
+  }
+
+  // NEW: Find container via time elements (which exist on Threads pages)
+  const timeElements = document.querySelectorAll('time[datetime]');
+  if (timeElements.length > 0) {
+    // Find common ancestor of all time elements
+    let commonAncestor = timeElements[0];
+    for (const time of timeElements) {
+      while (!commonAncestor.contains(time)) {
+        commonAncestor = commonAncestor.parentElement;
+      }
+    }
+    console.log(`Found media container via ${timeElements.length} time elements`);
+    return commonAncestor;
+  }
+
+  // NEW: Find via fbcdn images (Instagram CDN)
+  const fbcdnImages = document.querySelectorAll('img[src*="fbcdn"]');
+  if (fbcdnImages.length > 3) {
+    let commonAncestor = fbcdnImages[0];
+    for (const img of fbcdnImages) {
+      while (!commonAncestor.contains(img)) {
+        commonAncestor = commonAncestor.parentElement;
+      }
+    }
+    console.log(`Found media container via ${fbcdnImages.length} fbcdn images`);
+    return commonAncestor;
+  }
 
   // Fallback: look for main content area
   container = document.querySelector('main') ||
@@ -230,7 +260,10 @@ function findMediaContainer() {
              document.querySelector('.main') ||
              document.querySelector('#main');
 
-  if (container) return container;
+  if (container) {
+    console.log('Found media container via main element');
+    return container;
+  }
 
   // Last resort: use body but be careful
   console.log('Using document.body as container - may extract unwanted images');
@@ -397,77 +430,222 @@ function findParentArticle(element) {
 }
 
 function extractMediaUrls(container, mediaMap, metadataMap = null) {
-  // Look for all potential media elements
-  const mediaElements = container.querySelectorAll('img, video, video source, picture source, [data-src], [data-url], [data-image], [data-lazy-src]');
-
-  mediaElements.forEach(element => {
+  // APPROACH 1: Use time elements as post anchors to get datetime
+  const timeElements = container.querySelectorAll('time[datetime]');
+  console.log(`extractMediaUrls: Found ${timeElements.length} time elements`);
+  
+  timeElements.forEach(timeElement => {
+    const datetime = timeElement.getAttribute('datetime');
+    const postLink = timeElement.closest('a[href*="/post/"]');
+    const permalink = postLink ? postLink.href : null;
+    
+    // Find images associated with this post (traverse up to find container with images)
+    let postContainer = timeElement;
+    let foundImages = [];
+    
+    for (let i = 0; i < 10 && foundImages.length === 0; i++) {
+      // Get ALL images in container, not just fbcdn
+      const images = postContainer.querySelectorAll('img');
+      foundImages = Array.from(images).filter(img => {
+        return isPostImage(img);
+      });
+      if (foundImages.length > 0) break;
+      postContainer = postContainer.parentElement;
+    }
+    
+    // Add each image to the map with datetime
+    foundImages.forEach(img => {
+      const url = extractHighResUrl(img);
+      if (url && !mediaMap.has(url)) {
+        mediaMap.set(url, { 
+          url, 
+          type: 'image', 
+          datetime,
+          permalink
+        });
+      }
+    });
+  });
+  
+  // APPROACH 2: Scan ALL media elements directly (spec-style extraction)
+  const allMediaElements = container.querySelectorAll('img, video, video source, picture source');
+  console.log(`extractMediaUrls: Found ${allMediaElements.length} total media elements`);
+  
+  allMediaElements.forEach(element => {
     const url = extractHighResUrl(element);
     if (url && !mediaMap.has(url)) {
-      // Find parent article to extract datetime
-      const article = findParentArticle(element);
-      const datetime = extractPostDatetime(article);
+      // Skip profile pictures and obvious non-post images
+      if (url.includes('/v/t51.2885-19/')) return; // Profile pics
+      if (url.includes('avatar') || url.includes('icon') || url.includes('placeholder')) return;
       
-      // Determine media type
-      const tagName = element.tagName.toUpperCase();
-      let type = 'image';
-      if (tagName === 'VIDEO' || tagName === 'SOURCE') {
-        const src = element.src || element.dataset.src || '';
-        type = src.includes('video') || src.includes('.mp4') || src.includes('.webm') ? 'video' : 'image';
+      // Try to find datetime from nearby time element
+      let datetime = null;
+      let permalink = null;
+      let parent = element.parentElement;
+      for (let i = 0; i < 15; i++) {
+        const time = parent.querySelector('time[datetime]');
+        if (time) {
+          datetime = time.getAttribute('datetime');
+          const link = time.closest('a[href*="/post/"]');
+          if (link) permalink = link.href;
+          break;
+        }
+        parent = parent.parentElement;
+        if (!parent) break;
       }
       
-      // Store as object with metadata in Map
-      mediaMap.set(url, { url, type, datetime });
+      const type = element.tagName === 'VIDEO' || element.tagName === 'SOURCE' ? 'video' : 'image';
+      mediaMap.set(url, { url, type, datetime, permalink });
     }
   });
+  
+  console.log(`extractMediaUrls: Total ${mediaMap.size} media URLs found`);
 }
 
-// Extract metadata from all unique articles in container
+// Check if an image element is a post image (not profile pic, icon, etc.)
+function isPostImage(img) {
+  const url = img.src || img.dataset.src || img.dataset.url || '';
+  
+  // Skip profile pictures
+  if (url.includes('/v/t51.2885-19/')) return false;
+  
+  // Skip obvious non-post images
+  if (url.includes('avatar')) return false;
+  if (url.includes('icon')) return false;
+  if (url.includes('placeholder')) return false;
+  
+  // Check image dimensions (profile pics are usually small and square)
+  if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+    // Skip small images (likely icons)
+    if (img.naturalWidth < 50 || img.naturalHeight < 50) return false;
+  }
+  
+  // Accept images from known CDN domains
+  if (url.includes('fbcdn')) return true;
+  if (url.includes('scontent')) return true;
+  if (url.includes('cdninstagram')) return true;
+  if (url.includes('threads')) return true;
+  
+  // Accept images with common media extensions
+  if (url.match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i)) return true;
+  
+  return false;
+}
+
+// Extract metadata from all unique posts in container
+// Uses time elements as post anchors since article elements don't exist
 function extractAllMetadata(container, username) {
   const metadataArray = [];
-  const seenArticles = new Set();
+  const seenPosts = new Set();
   
-  // Find all article elements
-  const articles = container.querySelectorAll('article, [role="article"]');
+  // Use time elements as post anchors
+  const timeElements = container.querySelectorAll('time[datetime]');
+  console.log(`extractAllMetadata: Found ${timeElements.length} time elements`);
   
-  articles.forEach(article => {
-    // Create a unique key for the article based on permalink or content
-    const permalink = extractPermalink(article, username);
-    const key = permalink || article.textContent.substring(0, 100);
+  timeElements.forEach(timeElement => {
+    const datetime = timeElement.getAttribute('datetime');
+    const datetimeDisplay = timeElement.getAttribute('title');
     
-    if (!seenArticles.has(key)) {
-      seenArticles.add(key);
-      const metadata = extractPostMetadata(article, username);
-      // Only add if we have meaningful data
-      if (metadata.media_urls.length > 0 || metadata.post_content) {
-        metadataArray.push(metadata);
+    // Get post link (time is inside the link)
+    const postLink = timeElement.closest('a[href*="/post/"]');
+    const permalink = postLink ? postLink.href : null;
+    
+    // Skip if we've already processed this post
+    const postKey = permalink || datetime;
+    if (seenPosts.has(postKey)) return;
+    seenPosts.add(postKey);
+    
+    // Find images for this post (traverse up to find container with images)
+    let postContainer = timeElement;
+    let postImages = [];
+    
+    for (let i = 0; i < 10; i++) {
+      const images = postContainer.querySelectorAll('img');
+      postImages = Array.from(images).filter(img => isPostImage(img));
+      if (postImages.length > 0) break;
+      postContainer = postContainer.parentElement;
+    }
+    
+    // Use extractHighResUrl to get best quality URLs
+    const mediaUrls = postImages.map(img => extractHighResUrl(img)).filter(url => url);
+    
+    // Extract content/caption (if available) - look for text near the post
+    let postContent = null;
+    // Try to find text content in the post container
+    if (postContainer) {
+      const textSpans = postContainer.querySelectorAll('span[dir="auto"]');
+      const textParts = [];
+      textSpans.forEach(span => {
+        const text = span.textContent.trim();
+        // Skip if it's just a number or very short
+        if (text && text.length > 3 && !text.match(/^\d+$/)) {
+          textParts.push(text);
+        }
+      });
+      if (textParts.length > 0) {
+        postContent = textParts.join(' ').substring(0, 500); // Limit length
       }
+    }
+    
+    const metadata = {
+      username: username,
+      datetime_iso: datetime,
+      datetime_display: datetimeDisplay,
+      post_permalink: permalink,
+      media_urls: mediaUrls,
+      post_content: postContent,
+      like_count: 0, // Would need different extraction method
+      reply_count: 0  // Would need different extraction method
+    };
+    
+    if (mediaUrls.length > 0 || postContent) {
+      metadataArray.push(metadata);
     }
   });
   
+  console.log(`extractAllMetadata: Extracted ${metadataArray.length} posts with metadata`);
   return metadataArray;
 }
 
 function extractHighResUrl(element) {
-  // Try multiple attributes for media URLs
+  // For img elements, prioritize srcset for highest quality
+  if (element.tagName === 'IMG') {
+    // Check srcset first - this often has the highest resolution
+    if (element.srcset) {
+      const sources = element.srcset.split(',').map(s => s.trim().split(' '));
+      if (sources.length > 0) {
+        // Find the largest image by width descriptor
+        const largest = sources.reduce((max, curr) => {
+          const width = parseInt((curr[1] || '0').replace('w', ''));
+          const maxWidth = parseInt((max[1] || '0').replace('w', ''));
+          return width > maxWidth ? curr : max;
+        });
+        if (largest[0]) {
+          return largest[0];
+        }
+      }
+    }
+  }
+  
+  // Try multiple data attributes for lazy-loaded images
   let url = element.dataset.src ||
             element.dataset.url ||
             element.dataset.image ||
             element.dataset.lazySrc ||
             element.dataset.original ||
+            element.dataset.srcset ||
             element.src;
 
-  // For img elements, try srcset for highest quality
-  if (element.tagName === 'IMG' && !url && element.srcset) {
-    const sources = element.srcset.split(',').map(s => s.trim().split(' '));
-    if (sources.length > 0) {
-      // Get the last (usually highest quality) source
-      url = sources[sources.length - 1][0];
-    }
-  }
-
   // For video/source elements
-  if ((element.tagName === 'VIDEO' || element.tagName === 'SOURCE') && !url) {
-    url = element.src;
+  if ((element.tagName === 'VIDEO' || element.tagName === 'SOURCE')) {
+    url = url || element.src;
+    // Check for source elements inside video
+    if (!url && element.tagName === 'VIDEO') {
+      const source = element.querySelector('source');
+      if (source) {
+        url = source.src || source.dataset.src;
+      }
+    }
   }
 
   return url || null;
@@ -475,7 +653,7 @@ function extractHighResUrl(element) {
 
 async function handleInfiniteScroll(container, urls, limit = null) {
   let noNewMediaCount = 0;
-  const maxScrolls = 20;
+  const maxScrolls = 30; // Increased from 20
 
   for (let i = 0; i < maxScrolls; i++) {
     const currentMediaCount = urls.size;
@@ -486,24 +664,27 @@ async function handleInfiniteScroll(container, urls, limit = null) {
       behavior: 'smooth'
     });
 
-    // Wait for content to load
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Wait longer for content to load (increased from 2000ms)
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     // Scroll a bit more to trigger lazy loading
     window.scrollTo({
-      top: document.body.scrollHeight + 100,
+      top: document.body.scrollHeight + 200,
       behavior: 'smooth'
     });
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     // Extract new media
     extractMediaUrls(container, urls);
 
+    console.log(`Scroll ${i + 1}: Found ${urls.size} media URLs (${urls.size - currentMediaCount} new)`);
+
     // Check if we found new media
     if (urls.size === currentMediaCount) {
       noNewMediaCount++;
-      if (noNewMediaCount >= 3) {
+      if (noNewMediaCount >= 5) { // Increased from 3
+        console.log('No new media for 5 consecutive scrolls, stopping');
         break;
       }
     } else {

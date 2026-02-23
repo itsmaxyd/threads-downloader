@@ -108,30 +108,37 @@ function isValidMediaUrl(url) {
       return false;
     }
     
-    // Only allow specific CDN domains for security
-    const allowedDomains = [
-      'scontent', 'fbcdn', 'instagram', 'cdn',
-      'threads.net', 'threads.com'
-    ];
-    
+    // Allow specific CDN domains for security
     const hostname = urlObj.hostname.toLowerCase();
-    const isAllowed = allowedDomains.some(domain => hostname.includes(domain));
     
-    if (!isAllowed) {
-      console.log('Background: Domain not allowed:', hostname);
+    // Check for known CDN patterns in hostname
+    const isCDN = hostname.includes('fbcdn') ||
+                  hostname.includes('scontent') ||
+                  hostname.includes('cdninstagram') ||
+                  hostname.includes('instagram') ||
+                  hostname.includes('threads');
+    
+    if (!isCDN) {
+      console.log('Background: Domain not a recognized CDN:', hostname);
       return false;
     }
     
-    // Check for valid media file extensions OR query parameters (Instagram CDN uses query params)
+    // For CDN URLs, be very permissive - if it's from a known CDN and has query params, it's likely valid
+    const hasQueryParams = urlObj.search.length > 0;
     const pathname = urlObj.pathname.toLowerCase();
-    const hasValidExtension = pathname.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
-    const hasMediaPath = pathname.includes('/image/') || pathname.includes('/video/') || pathname.includes('/media/');
-    const hasQueryParams = urlObj.search.length > 0; // Instagram CDN URLs have query params
     
-    const isValid = hasValidExtension || hasMediaPath || (isAllowed && hasQueryParams);
+    // Check for valid media indicators
+    const hasValidExtension = pathname.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)(\?|$)/i);
+    const hasMediaPath = pathname.includes('/v/t51.') ||  // Instagram CDN path
+                         pathname.includes('/image/') || 
+                         pathname.includes('/video/') || 
+                         pathname.includes('/media/');
+    
+    // Accept if: has extension, has media path, or is CDN URL with query params
+    const isValid = hasValidExtension || hasMediaPath || hasQueryParams;
     
     if (!isValid) {
-      console.log('Background: URL validation failed - no valid extension, media path, or query params:', url);
+      console.log('Background: URL validation failed - no valid indicators:', url);
     }
     
     return isValid;
@@ -296,13 +303,25 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     username = sanitizeFilename(username);
 
     // Validate and filter media items
-    const validItems = mediaItems.filter(item => isValidMediaUrl(item.url));
+    const validItems = [];
+    const invalidItems = [];
+    
+    mediaItems.forEach(item => {
+      if (isValidMediaUrl(item.url)) {
+        validItems.push(item);
+      } else {
+        invalidItems.push(item.url);
+      }
+    });
 
-    console.log(`Background: Filtered to ${validItems.length} valid items (${mediaItems.length - validItems.length} invalid)`);
+    console.log(`Background: Filtered to ${validItems.length} valid items (${invalidItems.length} invalid)`);
+    if (invalidItems.length > 0 && invalidItems.length <= 5) {
+      console.log('Background: Sample invalid URLs:', invalidItems.slice(0, 5));
+    }
 
     if (validItems.length === 0) {
       console.log('Background: No valid items, sending error response');
-      sendResponse({ success: false, error: 'No valid media URLs found' });
+      sendResponse({ success: false, error: 'No valid media URLs found. Check console for details.' });
       return true;
     }
 
@@ -311,7 +330,12 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Store metadata if provided
     if (message.metadata && Array.isArray(message.metadata)) {
       postMetadata = message.metadata;
-      console.log(`Background: Stored metadata for ${postMetadata.length} posts`);
+      console.log(`[METADATA DEBUG] Background (downloadMedia): Stored metadata for ${postMetadata.length} posts`);
+      if (postMetadata.length > 0) {
+        console.log(`[METADATA DEBUG] Background (downloadMedia): Sample metadata:`, JSON.stringify(postMetadata[0], null, 2));
+      }
+    } else {
+      console.log(`[METADATA DEBUG] Background (downloadMedia): No metadata received or not an array. metadata=${!!message.metadata}, isArray=${Array.isArray(message.metadata)}`);
     }
     
     // Add to download queue
@@ -357,6 +381,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open for async response
   } else if (message.action === 'getMetadata') {
     // Return stored metadata
+    console.log(`[METADATA DEBUG] getMetadata called, returning ${postMetadata.length} items`);
     sendResponse({ success: true, metadata: postMetadata });
     return true;
   } else if (message.action === 'exportMetadata') {
@@ -364,7 +389,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const format = message.format || 'json';
     const username = message.username || 'threads-user';
     
+    console.log(`[METADATA DEBUG] exportMetadata called, format=${format}, metadata count=${postMetadata.length}`);
+    
     if (postMetadata.length === 0) {
+      console.log(`[METADATA DEBUG] exportMetadata: No metadata available`);
       sendResponse({ success: false, error: 'No metadata available to export' });
       return true;
     }
@@ -629,13 +657,25 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // Validate and filter media items
-    const validItems = mediaItems.filter(item => isValidMediaUrl(item.url));
+    const validItems = [];
+    const invalidItems = [];
+    
+    mediaItems.forEach(item => {
+      if (isValidMediaUrl(item.url)) {
+        validItems.push(item);
+      } else {
+        invalidItems.push(item.url);
+      }
+    });
 
-    console.log(`Background: Filtered to ${validItems.length} valid items (${mediaItems.length - validItems.length} invalid)`);
+    console.log(`Background: Filtered to ${validItems.length} valid items (${invalidItems.length} invalid)`);
+    if (invalidItems.length > 0 && invalidItems.length <= 5) {
+      console.log('Background: Sample invalid URLs:', invalidItems.slice(0, 5));
+    }
 
     if (validItems.length === 0) {
       console.log('Background: No valid items, sending error response');
-      sendResponse({ success: false, error: 'No valid media URLs found' });
+      sendResponse({ success: false, error: 'No valid media URLs found. Check console for details.' });
       return true;
     }
 
@@ -644,7 +684,12 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Store metadata if provided
     if (message.metadata && Array.isArray(message.metadata)) {
       postMetadata = message.metadata;
-      console.log(`Background: Stored metadata for ${postMetadata.length} posts`);
+      console.log(`[METADATA DEBUG] Background (downloadMediaWithResume): Stored metadata for ${postMetadata.length} posts`);
+      if (postMetadata.length > 0) {
+        console.log(`[METADATA DEBUG] Background (downloadMediaWithResume): Sample metadata:`, JSON.stringify(postMetadata[0], null, 2));
+      }
+    } else {
+      console.log(`[METADATA DEBUG] Background (downloadMediaWithResume): No metadata received or not an array. metadata=${!!message.metadata}, isArray=${Array.isArray(message.metadata)}`);
     }
     
     // Add to download queue
@@ -713,6 +758,49 @@ async function processDownloadQueue() {
     lastCooldownMilestone = 0;
     usedDatetimes = new Map(); // Reset datetime collision tracking
     // Note: Keep postMetadata for export after download completes
+    
+    // Auto-export metadata if setting is enabled
+    if (postMetadata.length > 0) {
+      browser.storage.local.get(['exportMetadata', 'metadataFormat']).then((settings) => {
+        if (settings.exportMetadata) {
+          console.log(`[METADATA DEBUG] Auto-exporting metadata, format=${settings.metadataFormat || 'json'}`);
+          const format = settings.metadataFormat || 'json';
+          const username = savedState ? savedState.username : 'threads-user';
+          
+          // Generate filename with today's date
+          const today = new Date();
+          const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+          
+          let content, mimeType, extension;
+          if (format === 'csv') {
+            content = convertToCSV(postMetadata);
+            mimeType = 'text/csv';
+            extension = 'csv';
+          } else {
+            content = JSON.stringify(postMetadata, null, 2);
+            mimeType = 'application/json';
+            extension = 'json';
+          }
+          
+          const blob = new Blob([content], { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          
+          // Save in the same directory as images: threads-downloads/<username>/<username>_<date>_metadata.<ext>
+          browser.downloads.download({
+            url: url,
+            filename: `threads-downloads/${username}/${username}_${dateStr}_metadata.${extension}`,
+            saveAs: false
+          }).then(() => {
+            console.log(`[METADATA DEBUG] Auto-exported metadata successfully`);
+            URL.revokeObjectURL(url);
+          }).catch((error) => {
+            console.error(`[METADATA DEBUG] Auto-export failed:`, error);
+            URL.revokeObjectURL(url);
+          });
+        }
+      }).catch(() => {});
+    }
+    
     savedState = null; // Clear saved state when complete
     browser.storage.local.remove(['downloadState']).catch(() => {});
     browser.runtime.sendMessage({ action: 'downloadComplete' }).catch(() => {});

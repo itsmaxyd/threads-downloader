@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Threads Media Downloader - Download media from Threads.net with ease">
   <title>Threads Media Downloader</title>
-  <link rel="icon" type="image/png" href="media/icon/icon_16.png">
+  <link rel="icon" type="image/png" href="media/icon/icon_48.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -24,11 +24,10 @@
         <nav>
           <ul>
             <li><a href="#home" class="active">Home</a></li>
+            <li><a href="#download">Download</a></li>
             <li><a href="#features">Features</a></li>
-            <li><a href="#screenshots">Screenshots</a></li>
-            <li><a href="#video">Video</a></li>
-            <li><a href="#faq">FAQ</a></li>
-            <li><a href="#support">Support</a></li>
+            <li><a href="#mobile">Mobile</a></li>
+            <li><a href="#privacy">Privacy</a></li>
           </ul>
         </nav>
       </div>
@@ -39,19 +38,19 @@
     <section id="home" class="hero">
       <div class="container">
         <h1>Download Media from Threads</h1>
-        <p>A powerful browser extension that lets you download photos, videos, and reels from Threads.net with a single click.</p>
+        <p>A browser extension to download photos, videos, and reels from Threads.net user media pages.</p>
         <div class="btn-group">
-          <a href="https://chromewebstore.google.com/detail/threads-media-downloader/jgiglfccgfjoajfgejioofaiojaljdim" class="btn btn-primary" target="_blank" rel="noopener">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path>
-            </svg>
-            Add to Chrome/Edge
-          </a>
-          <a href="https://addons.mozilla.org/en-US/firefox/addon/threads-media-downloader/" class="btn btn-secondary" target="_blank" rel="noopener">
+          <a href="https://addons.mozilla.org/en-US/firefox/addon/threads-media-downloader/" class="btn btn-primary" target="_blank" rel="noopener">
             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path>
             </svg>
             Add to Firefox
+          </a>
+          <a href="https://chromewebstore.google.com/detail/threads-media-downloader/jgiglfccgfjoajfgejioofaiojaljdim" class="btn btn-secondary" target="_blank" rel="noopener">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path>
+            </svg>
+            Add to Chrome
           </a>
         </div>
         <div class="hero-stats">
@@ -61,11 +60,41 @@
           </div>
           <div class="stat">
             <div class="stat-value">Open Source</div>
-            <div class="stat-label">Transparent</div>
+            <div class="stat-label">GPLv3 License</div>
           </div>
           <div class="stat">
             <div class="stat-value">Privacy First</div>
-            <div class="stat-label">Secure</div>
+            <div class="stat-label">No Data Collection</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="download" style="background: var(--color-bg-secondary);">
+      <div class="container">
+        <h2 class="section-title">Quick Install</h2>
+        <div class="download-grid">
+          <div class="download-card">
+            <div class="browser-icon firefox">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+              </svg>
+            </div>
+            <h3>Firefox</h3>
+            <p>Desktop & Android</p>
+            <a href="https://addons.mozilla.org/en-US/firefox/addon/threads-media-downloader/" class="btn btn-primary" target="_blank" rel="noopener">Add to Firefox</a>
+            <span class="version-note">v120+ for Android</span>
+          </div>
+          <div class="download-card">
+            <div class="browser-icon chrome">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+              </svg>
+            </div>
+            <h3>Chrome / Edge</h3>
+            <p>Desktop browsers</p>
+            <a href="https://chromewebstore.google.com/detail/threads-media-downloader/jgiglfccgfjoajfgejioofaiojaljdim" class="btn btn-secondary" target="_blank" rel="noopener">Add to Chrome</a>
+            <span class="version-note">Also works on Edge</span>
           </div>
         </div>
       </div>
@@ -74,7 +103,6 @@
     <section id="features">
       <div class="container">
         <h2 class="section-title">Key Features</h2>
-        <p class="section-subtitle">Everything you need to download content from Threads</p>
         <div class="features-grid">
           <div class="feature-card">
             <div class="feature-icon">
@@ -82,17 +110,35 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
               </svg>
             </div>
-            <h3>Photo Download</h3>
-            <p>Download single photos or entire albums from Threads posts with one click.</p>
+            <h3>Download All Media</h3>
+            <p>Download all photos, videos, and reels from any Threads user media page.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
               </svg>
             </div>
-            <h3>Video Support</h3>
-            <p>Download videos including Reels in high quality directly to your device.</p>
+            <h3>Smart Filenames</h3>
+            <p>Files named with datetime format: <code>username_YYYY-MM-DD_HH-M-S.ext</code></p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+              </svg>
+            </div>
+            <h3>Resume Downloads</h3>
+            <p>Automatically detects existing files and offers to resume from where you left off.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+              </svg>
+            </div>
+            <h3>Metadata Export</h3>
+            <p>Export post data in JSON or CSV format (username, datetime, likes, replies).</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
@@ -100,8 +146,8 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
               </svg>
             </div>
-            <h3>Lightning Fast</h3>
-            <p>Optimized for speed - download media quickly without any hassle.</p>
+            <h3>Auto-Redirect</h3>
+            <p>Automatically redirect from profile page to media page for quick access.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">
@@ -110,199 +156,166 @@
               </svg>
             </div>
             <h3>Privacy First</h3>
-            <p>Your data stays on your device. We don't collect, store, or share any personal information.</p>
+            <p>No data collection. All processing happens locally on your device.</p>
           </div>
-          <div class="feature-card">
-            <div class="feature-icon">
+        </div>
+      </div>
+    </section>
+
+    <section id="mobile" style="background: var(--color-bg-secondary);">
+      <div class="container">
+        <h2 class="section-title">Mobile Support</h2>
+        <p class="section-subtitle">Use Threads Downloader on your mobile device</p>
+        <div class="mobile-grid">
+          <div class="mobile-card">
+            <div class="mobile-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+              </svg>
+            </div>
+            <h3>Firefox for Android</h3>
+            <p>Full support with touch-friendly UI</p>
+            <ul>
+              <li>Version 120+ required</li>
+              <li>Search in Firefox Add-ons</li>
+              <li>Direct download support</li>
+            </ul>
+          </div>
+          <div class="mobile-card">
+            <div class="mobile-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+              </svg>
+            </div>
+            <h3>Kiwi Browser</h3>
+            <p>Chrome extension support on Android</p>
+            <ul>
+              <li>Load Chrome extensions</li>
+              <li>Enable developer mode</li>
+              <li>Works like desktop Chrome</li>
+            </ul>
+          </div>
+        </div>
+        <div class="browser-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Browser</th>
+                <th>Desktop</th>
+                <th>Mobile</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Firefox</td>
+                <td>✅ Supported</td>
+                <td>✅ v120+</td>
+              </tr>
+              <tr>
+                <td>Chrome</td>
+                <td>✅ Supported</td>
+                <td>❌ Use Kiwi</td>
+              </tr>
+              <tr>
+                <td>Edge</td>
+                <td>✅ Supported</td>
+                <td>❌ Use Kiwi</td>
+              </tr>
+              <tr>
+                <td>Kiwi Browser</td>
+                <td>—</td>
+                <td>✅ Supported</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div class="container">
+        <h2 class="section-title">Privacy & Security</h2>
+        <div class="privacy-content">
+          <div class="privacy-highlight">
+            <div class="privacy-icon">
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
               </svg>
             </div>
-            <h3>Cross-Browser</h3>
-            <p>Works on Chrome, Firefox, Edge, Brave, and other Chromium-based browsers.</p>
+            <h3>Your Data Stays Local</h3>
+            <p>We don't collect, store, or transmit any user data. Everything stays on your device.</p>
           </div>
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
-              </svg>
-            </div>
-            <h3>Open Source</h3>
-            <p>100% transparent and auditable code. Free to use, modify, and distribute.</p>
+          <div class="privacy-list">
+            <h4>What We Don't Collect</h4>
+            <ul>
+              <li>❌ No personal identification</li>
+              <li>❌ No browsing history</li>
+              <li>❌ No usage analytics</li>
+              <li>❌ No third-party servers</li>
+            </ul>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="screenshots" style="background: var(--color-bg-secondary);">
-      <div class="container">
-        <h2 class="section-title">Screenshots</h2>
-        <p class="section-subtitle">See the extension in action on Firefox</p>
-        <div class="screenshots-grid">
-          <div class="screenshot-card" onclick="openLightbox(0)">
-            <img src="media/screenshots/firefox/screenshot_1.jpg" alt="Extension Interface">
-            <div class="screenshot-overlay">
-              <span>Extension Interface</span>
-            </div>
-          </div>
-          <div class="screenshot-card" onclick="openLightbox(1)">
-            <img src="media/screenshots/firefox/screenshot_2.jpg" alt="Download Process">
-            <div class="screenshot-overlay">
-              <span>Download Process</span>
-            </div>
-          </div>
-          <div class="screenshot-card" onclick="openLightbox(2)">
-            <img src="media/screenshots/firefox/screenshot_3.jpg" alt="Media Selection">
-            <div class="screenshot-overlay">
-              <span>Media Selection</span>
-            </div>
-          </div>
-          <div class="screenshot-card" onclick="openLightbox(3)">
-            <img src="media/screenshots/firefox/screenshot_4.jpg" alt="Settings Panel">
-            <div class="screenshot-overlay">
-              <span>Settings Panel</span>
-            </div>
-          </div>
-          <div class="screenshot-card" onclick="openLightbox(4)">
-            <img src="media/screenshots/firefox/screenshot_5.jpg" alt="Download Complete">
-            <div class="screenshot-overlay">
-              <span>Download Complete</span>
-            </div>
+          <div class="privacy-list">
+            <h4>What We Do</h4>
+            <ul>
+              <li>✅ Process media locally</li>
+              <li>✅ Download directly to your device</li>
+              <li>✅ Store settings locally only</li>
+              <li>✅ Clear data when uninstalled</li>
+            </ul>
           </div>
         </div>
-      </div>
-    </section>
-
-    <section id="video">
-      <div class="container">
-        <h2 class="section-title">Watch Demo</h2>
-        <p class="section-subtitle">See how easy it is to download media from Threads</p>
-        <div class="video-container">
-          <iframe 
-            src="https://www.youtube.com/embed/4IaZPJmopaw" 
-            title="Threads Media Downloader Demo" 
-            frameborder="0" 
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-            allowfullscreen>
-          </iframe>
-        </div>
+        <p class="privacy-footer">
+          Read our <a href="privacy.html">Privacy Policy</a> for full details.
+        </p>
       </div>
     </section>
 
     <section id="faq" style="background: var(--color-bg-secondary);">
       <div class="container">
         <h2 class="section-title">Frequently Asked Questions</h2>
-        <p class="section-subtitle">Common questions about the Threads Media Downloader</p>
         <div class="faq-container">
           <div class="faq-item">
             <div class="faq-question" onclick="toggleFAQ(this)">
-              <h3>How do I install the extension?</h3>
+              <h3>How do I use the extension?</h3>
               <span class="faq-icon">+</span>
             </div>
             <div class="faq-answer">
-              <p>Simply click the "Add to Chrome/Edge" or "Add to Firefox" button above. The extension will be automatically installed and ready to use.</p>
+              <p>1. Navigate to a Threads user's media page: <code>threads.net/@username/media</code><br>
+              2. Click the extension icon<br>
+              3. Click "Download Media" or "Prepare Queue"<br>
+              4. For existing downloads, choose to resume or download all</p>
             </div>
           </div>
           
           <div class="faq-item">
             <div class="faq-question" onclick="toggleFAQ(this)">
-              <h3>What types of media can I download?</h3>
+              <h3>What filename format is used?</h3>
               <span class="faq-icon">+</span>
             </div>
             <div class="faq-answer">
-              <p>You can download photos, videos, and reels from Threads posts. The extension supports various image formats (JPG, PNG, WebP) and video formats.</p>
+              <p>Files are saved as: <code>{username}_{YYYY-MM-DD_HH-M-S}.{ext}</code><br>
+              Example: <code>santhosh_shiva11_2026-02-21_16-41-32.jpg</code><br>
+              If multiple posts have the same timestamp, a suffix is added: <code>_1</code>, <code>_2</code>, etc.</p>
             </div>
           </div>
           
           <div class="faq-item">
             <div class="faq-question" onclick="toggleFAQ(this)">
-              <h3>Is my data safe?</h3>
+              <h3>Can I export post metadata?</h3>
               <span class="faq-icon">+</span>
             </div>
             <div class="faq-answer">
-              <p>Yes, absolutely. The extension is privacy-first and doesn't collect, store, or share any of your personal information. All processing happens locally on your device.</p>
+              <p>Yes! Enable metadata export in settings to collect: username, datetime, post permalink, media URLs, content, like count, and reply count. Choose JSON or CSV format.</p>
             </div>
           </div>
           
           <div class="faq-item">
             <div class="faq-question" onclick="toggleFAQ(this)">
-              <h3>Does it work with private posts?</h3>
+              <h3>Does it work on private posts?</h3>
               <span class="faq-icon">+</span>
             </div>
             <div class="faq-answer">
-              <p>The extension can only download media from posts that are visible to you on Threads. It cannot access private or restricted content.</p>
-            </div>
-          </div>
-          
-          <div class="faq-item">
-            <div class="faq-question" onclick="toggleFAQ(this)">
-              <h3>Can I download multiple files at once?</h3>
-              <span class="faq-icon">+</span>
-            </div>
-            <div class="faq-answer">
-              <p>Yes! The extension supports batch downloading. You can select multiple posts or media files and download them all simultaneously.</p>
-            </div>
-          </div>
-          
-          <div class="faq-item">
-            <div class="faq-question" onclick="toggleFAQ(this)">
-              <h3>What browsers are supported?</h3>
-              <span class="faq-icon">+</span>
-            </div>
-            <div class="faq-answer">
-              <p>The extension works on Google Chrome, Mozilla Firefox, Microsoft Edge, Brave, and other Chromium-based browsers.</p>
-            </div>
-          </div>
-          
-          <div class="faq-item">
-            <div class="faq-question" onclick="toggleFAQ(this)">
-              <h3>How do I report bugs or request features?</h3>
-              <span class="faq-icon">+</span>
-            </div>
-            <div class="faq-answer">
-              <p>You can contact us at maxdemon@outlook.com to report bugs, request features, or get support. We appreciate your feedback!</p>
-            </div>
-          </div>
-          
-          <div class="faq-item">
-            <div class="faq-question" onclick="toggleFAQ(this)">
-              <h3>Is the extension free to use?</h3>
-              <span class="faq-icon">+</span>
-            </div>
-            <div class="faq-answer">
-              <p>Yes, the extension is completely free and open source. It's licensed under GPLv3, ensuring it remains free forever.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="support">
-      <div class="container">
-        <h2 class="section-title">Support Developer</h2>
-        <p class="section-subtitle">Help keep the extension free and maintained</p>
-        <div class="support-content">
-          <div class="support-card">
-            <div class="support-icon">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-              </svg>
-            </div>
-            <h3>Buy Me a Coffee</h3>
-            <p>Support the development and maintenance of this free extension.</p>
-            <a href="https://www.buymeacoffee.com/maxdemon" class="btn btn-primary" target="_blank" rel="noopener">Support Developer</a>
-          </div>
-          
-          <div class="support-info">
-            <h3>Contact Information</h3>
-            <p>For bug reports, feature requests, or general support:</p>
-            <div class="contact-info">
-              <div class="contact-item">
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                </svg>
-                <span>maxdemon@outlook.com</span>
-              </div>
+              <p>The extension can only download media from posts visible to you on Threads. It cannot access private or restricted content.</p>
             </div>
           </div>
         </div>
@@ -318,68 +331,24 @@
             <img src="media/icon/icon_48.png" alt="Threads Media Downloader">
             <span>Threads Media Downloader</span>
           </a>
-          <p>A powerful browser extension for downloading media from Threads.net. Open source and privacy-first.</p>
+          <p>Open source browser extension for downloading media from Threads.net. Privacy-first design.</p>
         </div>
         <div class="footer-links">
           <h4>Legal</h4>
           <ul>
             <li><a href="privacy.html">Privacy Policy</a></li>
-            <li>Licensed under GPLv3</li>
+            <li>GNU GPLv3 License</li>
           </ul>
         </div>
       </div>
       <div class="footer-bottom">
         <p>Threads Media Downloader is not affiliated with, endorsed, or sponsored by Meta or Threads.</p>
-        <p>&copy; 2025 Threads Media Downloader. Open source under GPLv3 License.</p>
+        <p>&copy; 2026 Threads Media Downloader. Open source under GPLv3 License.</p>
       </div>
     </div>
   </footer>
 
-  <div class="lightbox" id="lightbox">
-    <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
-    <div class="lightbox-content">
-      <img id="lightbox-img" src="" alt="Screenshot">
-      <button class="lightbox-nav lightbox-prev" onclick="prevImage()">&#10094;</button>
-      <button class="lightbox-nav lightbox-next" onclick="nextImage()">&#10095;</button>
-      <div class="lightbox-counter" id="lightbox-counter"></div>
-    </div>
-  </div>
-
   <script>
-    const screenshots = [
-      { src: 'media/screenshots/firefox/screenshot_1.jpg', caption: 'Extension Interface' },
-      { src: 'media/screenshots/firefox/screenshot_2.jpg', caption: 'Download Process' },
-      { src: 'media/screenshots/firefox/screenshot_3.jpg', caption: 'Media Selection' },
-      { src: 'media/screenshots/firefox/screenshot_4.jpg', caption: 'Settings Panel' },
-      { src: 'media/screenshots/firefox/screenshot_5.jpg', caption: 'Download Complete' }
-    ];
-    let currentImage = 0;
-
-    function openLightbox(index) {
-      currentImage = index;
-      updateLightbox();
-      document.getElementById('lightbox').classList.add('active');
-    }
-
-    function closeLightbox() {
-      document.getElementById('lightbox').classList.remove('active');
-    }
-
-    function updateLightbox() {
-      document.getElementById('lightbox-img').src = screenshots[currentImage].src;
-      document.getElementById('lightbox-counter').textContent = `${currentImage + 1} / ${screenshots.length}`;
-    }
-
-    function prevImage() {
-      currentImage = (currentImage - 1 + screenshots.length) % screenshots.length;
-      updateLightbox();
-    }
-
-    function nextImage() {
-      currentImage = (currentImage + 1) % screenshots.length;
-      updateLightbox();
-    }
-
     function toggleFAQ(element) {
       const answer = element.nextElementSibling;
       const icon = element.querySelector('.faq-icon');
@@ -399,13 +368,6 @@
         icon.textContent = '−';
       }
     }
-
-    document.addEventListener('keydown', (e) => {
-      if (!document.getElementById('lightbox').classList.contains('active')) return;
-      if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowLeft') prevImage();
-      if (e.key === 'ArrowRight') nextImage();
-    });
 
     document.querySelector('.mobile-menu-btn').addEventListener('click', () => {
       document.querySelector('nav ul').classList.toggle('active');

@@ -111,30 +111,37 @@ function isValidMediaUrl(url) {
       return false;
     }
     
-    // Only allow specific CDN domains for security
-    const allowedDomains = [
-      'scontent', 'fbcdn', 'instagram', 'cdn',
-      'threads.net', 'threads.com'
-    ];
-    
+    // Allow specific CDN domains for security
     const hostname = urlObj.hostname.toLowerCase();
-    const isAllowed = allowedDomains.some(domain => hostname.includes(domain));
     
-    if (!isAllowed) {
-      console.log('Background: Domain not allowed:', hostname);
+    // Check for known CDN patterns in hostname
+    const isCDN = hostname.includes('fbcdn') ||
+                  hostname.includes('scontent') ||
+                  hostname.includes('cdninstagram') ||
+                  hostname.includes('instagram') ||
+                  hostname.includes('threads');
+    
+    if (!isCDN) {
+      console.log('Background: Domain not a recognized CDN:', hostname);
       return false;
     }
     
-    // Check for valid media file extensions OR query parameters (Instagram CDN uses query params)
+    // For CDN URLs, be very permissive - if it's from a known CDN and has query params, it's likely valid
+    const hasQueryParams = urlObj.search.length > 0;
     const pathname = urlObj.pathname.toLowerCase();
-    const hasValidExtension = pathname.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
-    const hasMediaPath = pathname.includes('/image/') || pathname.includes('/video/') || pathname.includes('/media/');
-    const hasQueryParams = urlObj.search.length > 0; // Instagram CDN URLs have query params
     
-    const isValid = hasValidExtension || hasMediaPath || (isAllowed && hasQueryParams);
+    // Check for valid media indicators
+    const hasValidExtension = pathname.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)(\?|$)/i);
+    const hasMediaPath = pathname.includes('/v/t51.') ||  // Instagram CDN path
+                         pathname.includes('/image/') || 
+                         pathname.includes('/video/') || 
+                         pathname.includes('/media/');
+    
+    // Accept if: has extension, has media path, or is CDN URL with query params
+    const isValid = hasValidExtension || hasMediaPath || hasQueryParams;
     
     if (!isValid) {
-      console.log('Background: URL validation failed - no valid extension, media path, or query params:', url);
+      console.log('Background: URL validation failed - no valid indicators:', url);
     }
     
     return isValid;
@@ -299,13 +306,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     username = sanitizeFilename(username);
 
     // Validate and filter media items
-    const validItems = mediaItems.filter(item => isValidMediaUrl(item.url));
+    const validItems = [];
+    const invalidItems = [];
+    
+    mediaItems.forEach(item => {
+      if (isValidMediaUrl(item.url)) {
+        validItems.push(item);
+      } else {
+        invalidItems.push(item.url);
+      }
+    });
 
-    console.log(`Background: Filtered to ${validItems.length} valid items (${mediaItems.length - validItems.length} invalid)`);
+    console.log(`Background: Filtered to ${validItems.length} valid items (${invalidItems.length} invalid)`);
+    if (invalidItems.length > 0 && invalidItems.length <= 5) {
+      console.log('Background: Sample invalid URLs:', invalidItems.slice(0, 5));
+    }
 
     if (validItems.length === 0) {
       console.log('Background: No valid items, sending error response');
-      sendResponse({ success: false, error: 'No valid media URLs found' });
+      sendResponse({ success: false, error: 'No valid media URLs found. Check console for details.' });
       return true;
     }
 
@@ -536,6 +555,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tabs[0]) {
+          // Check if it's a Threads page first to avoid "Receiving end does not exist" error
+          if (!tabs[0].url || (!tabs[0].url.includes('threads.net') && !tabs[0].url.includes('threads.com'))) {
+            sendResponse({ isProfilePage: false });
+            return;
+          }
           const response = await chrome.tabs.sendMessage(tabs[0].id, { action: 'checkProfilePage' });
           sendResponse(response);
         } else {
@@ -553,6 +577,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tabs[0]) {
+          // Check if it's a Threads page first to avoid "Receiving end does not exist" error
+          if (!tabs[0].url || (!tabs[0].url.includes('threads.net') && !tabs[0].url.includes('threads.com'))) {
+            sendResponse({ success: false, error: 'Not a Threads page' });
+            return;
+          }
           await chrome.tabs.sendMessage(tabs[0].id, { action: 'redirectToMedia' });
           sendResponse({ success: true });
         } else {
@@ -624,13 +653,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // Validate and filter media items
-    const validItems = mediaItems.filter(item => isValidMediaUrl(item.url));
+    const validItems = [];
+    const invalidItems = [];
+    
+    mediaItems.forEach(item => {
+      if (isValidMediaUrl(item.url)) {
+        validItems.push(item);
+      } else {
+        invalidItems.push(item.url);
+      }
+    });
 
-    console.log(`Background: Filtered to ${validItems.length} valid items (${mediaItems.length - validItems.length} invalid)`);
+    console.log(`Background: Filtered to ${validItems.length} valid items (${invalidItems.length} invalid)`);
+    if (invalidItems.length > 0 && invalidItems.length <= 5) {
+      console.log('Background: Sample invalid URLs:', invalidItems.slice(0, 5));
+    }
 
     if (validItems.length === 0) {
       console.log('Background: No valid items, sending error response');
-      sendResponse({ success: false, error: 'No valid media URLs found' });
+      sendResponse({ success: false, error: 'No valid media URLs found. Check console for details.' });
       return true;
     }
 
