@@ -704,10 +704,12 @@ async function processDownloadQueue() {
 
     // Auto-export metadata if setting is enabled
     if (postMetadata.length > 0) {
+      // Capture username before clearing savedState (storage callback is async)
+      const exportUsername = savedState ? savedState.username : 'threads-user';
       chrome.storage.local.get(['exportMetadata', 'metadataFormat'], (result) => {
         if (result.exportMetadata) {
           const format = result.metadataFormat || 'json';
-          const username = savedState ? savedState.username : 'threads-user';
+          const username = exportUsername;
 
           // Generate filename with today's date
           const today = new Date();
