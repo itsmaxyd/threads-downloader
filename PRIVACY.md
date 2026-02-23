@@ -1,10 +1,10 @@
-# Privacy Policy for Threads Media Downloader Chrome Extension
+# Privacy Policy for Threads Media Downloader
 
 **Last Updated: December 26, 2025**
 
 ## Overview
 
-Threads Media Downloader ("we", "our", or "us") is a Chrome extension that allows users to download media content from Threads (threads.net) user profiles. This Privacy Policy explains how we collect, use, and protect your information.
+Threads Media Downloader ("we", "our", or "us") is a browser extension that allows users to download media content from Threads (threads.net) user profiles. This Privacy Policy explains how we collect, use, and protect your information.
 
 By installing and using this extension, you agree to the practices described in this Privacy Policy.
 
@@ -19,13 +19,13 @@ By installing and using this extension, you agree to the practices described in 
 
 ### 2. Data Collected Automatically
 
-- **Download Settings**: Your cooldown preferences (between downloads and after 100 downloads) are stored locally in Chrome's storage API.
+- **Download Settings**: Your cooldown preferences (between downloads and after 100 downloads) are stored locally in your browser's storage API.
 - **Download State**: If you stop a download session, the remaining queue and progress are temporarily stored locally to allow resumption. This data is automatically cleared when downloads complete.
 - **Usage Statistics**: We do NOT collect any usage analytics, click tracking, or behavioral data.
 
 ### 3. Data Processed During Use
 
-- **Media URLs**: When you download media, the extension processes URLs from Threads pages. These URLs are processed locally and sent directly to Chrome's download API.
+- **Media URLs**: When you download media, the extension processes URLs from Threads pages. These URLs are processed locally and sent directly to your browser's download API.
 - **Page Content**: The content script temporarily accesses the current Threads page to extract media URLs. This data is processed locally and is not stored or transmitted to any external servers (other than the media files being downloaded).
 
 ### 4. Data We Do NOT Collect
@@ -67,7 +67,7 @@ We implement the following security measures to protect your data:
 
 ### 1. Data Storage Security
 
-- All stored data uses Chrome's local storage API
+- All stored data uses your browser's local storage API
 - Download state and settings are stored only on your device
 - Data is automatically cleared when no longer needed
 
@@ -99,7 +99,9 @@ As a user of this extension, you have the following rights:
 You can view all data stored by the extension by:
 - Opening the extension popup
 - Checking your saved settings
-- Viewing Chrome's extension storage via chrome://extensions → Developer mode → Inspect views
+- Viewing your browser's extension storage:
+  - **Chrome**: `chrome://extensions/` → Developer mode → Inspect views
+  - **Firefox**: `about:debugging` → This Firefox → Inspect
 
 ### 2. Right to Delete
 
@@ -110,19 +112,19 @@ You can delete your data at any time:
 2. Click "Clear Queue" button
 
 **Option B - Reset All Settings:**
-1. Go to Chrome → Settings → Extensions
+1. Go to your browser's extension settings
 2. Find Threads Media Downloader
-3. Click "Remove from Chrome" to uninstall
+3. Click "Remove" to uninstall
 4. This deletes all locally stored data
 
 **Option C - Manual Deletion:**
-1. Go to `chrome://settings/cookies`
-2. Search for "extension" or clear site data for threads.net
+- **Chrome**: Go to `chrome://settings/cookies` and clear site data for threads.net
+- **Firefox**: Go to `about:preferences#privacy` and clear site data
 
 ### 3. Right to Control
 
 - **Opt-out of Resume Feature**: Simply clear the queue when done downloading
-- **Control Download Settings**: Adjust cooldown times or use incognito mode
+- **Control Download Settings**: Adjust cooldown times or use private/incognito mode
 - **Limit Data Collection**: Use the extension without saving any custom settings
 
 ### 4. Right to Export

@@ -11,6 +11,8 @@ const loadBtn = document.getElementById('loadBtn');
 const queueFileInput = document.getElementById('queueFileInput');
 const resumeBtn = document.getElementById('resumeBtn');
 const stopBtn = document.getElementById('stopBtn');
+const mainButtons = document.getElementById('mainButtons');
+const actionButtons = document.getElementById('actionButtons');
 const clearBtn = document.getElementById('clearBtn');
 const progressDiv = document.getElementById('progress');
 const progressText = document.getElementById('progressText');
@@ -20,6 +22,79 @@ const usernameInput = document.getElementById('usernameInput');
 const cooldownInput = document.getElementById('cooldownInput');
 const cooldown100Input = document.getElementById('cooldown100Input');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+const themeToggle = document.getElementById('themeToggle');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsOverlay = document.getElementById('settingsOverlay');
+const closeSettings = document.getElementById('closeSettings');
+
+// Theme Management
+function initTheme() {
+  chrome.storage.local.get(['theme'], (result) => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to load theme:', chrome.runtime.lastError);
+      return;
+    }
+    const theme = result.theme || 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+  });
+}
+
+function toggleTheme() {
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', newTheme);
+  chrome.storage.local.set({ theme: newTheme }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to save theme:', chrome.runtime.lastError);
+    }
+  });
+}
+
+// Settings Panel Management
+function openSettingsPanel() {
+  settingsOverlay.classList.add('active');
+}
+
+function closeSettingsPanel() {
+  settingsOverlay.classList.remove('active');
+}
+
+// Button State Management
+function showDefaultState() {
+  mainButtons.style.display = 'grid';
+  actionButtons.style.display = 'none';
+}
+
+function showDownloadingState() {
+  mainButtons.style.display = 'none';
+  actionButtons.style.display = 'grid';
+  stopBtn.style.display = 'flex';
+  resumeBtn.style.display = 'none';
+}
+
+function showStoppedState() {
+  mainButtons.style.display = 'none';
+  actionButtons.style.display = 'grid';
+  stopBtn.style.display = 'none';
+  resumeBtn.style.display = 'flex';
+}
+
+// Initialize theme on load
+initTheme();
+
+// Theme toggle event listener
+themeToggle?.addEventListener('click', toggleTheme);
+
+// Settings panel event listeners
+settingsBtn?.addEventListener('click', openSettingsPanel);
+closeSettings?.addEventListener('click', closeSettingsPanel);
+
+// Close settings panel when clicking outside
+settingsOverlay?.addEventListener('click', (e) => {
+  if (e.target === settingsOverlay) {
+    closeSettingsPanel();
+  }
+});
 
 // Load saved settings
 chrome.storage.local.get(['cooldownMs', 'cooldownAfter100'], (result) => {
@@ -59,7 +134,8 @@ saveSettingsBtn.addEventListener('click', () => {
     saveSettingsBtn.textContent = 'Saved!';
     setTimeout(() => {
       saveSettingsBtn.textContent = 'Save Settings';
-    }, 2000);
+      closeSettingsPanel();
+    }, 1000);
   });
 });
 
@@ -90,7 +166,6 @@ downloadBtn.addEventListener('click', async () => {
     }
     
     downloadBtn.disabled = true;
-    downloadBtn.textContent = 'Extracting...';
     statusDiv.className = 'status extracting';
     statusDiv.textContent = 'Extracting media from page...';
     
@@ -112,17 +187,14 @@ downloadBtn.addEventListener('click', async () => {
       progressDiv.style.display = 'block';
       progressText.textContent = `Queued: ${response.count} files`;
       progressBar.style.width = '0%';
-      downloadBtn.style.display = 'none';
-      stopBtn.style.display = 'block';
+      showDownloadingState();
       
       // Start status polling
       startStatusPolling();
     } else {
       alert(`Error: ${response.error || 'Failed to extract media'}`);
       downloadBtn.disabled = false;
-      downloadBtn.textContent = 'Download Media';
-      downloadBtn.style.display = 'block';
-      stopBtn.style.display = 'none';
+      showDefaultState();
       statusDiv.className = 'status idle';
       statusDiv.textContent = 'Ready';
       progressDiv.style.display = 'none';
@@ -132,9 +204,7 @@ downloadBtn.addEventListener('click', async () => {
     console.error('Error:', error);
     alert(`Error: ${error.message}`);
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download Media';
-    downloadBtn.style.display = 'block';
-    stopBtn.style.display = 'none';
+    showDefaultState();
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Ready';
     progressDiv.style.display = 'none';
@@ -224,9 +294,7 @@ queueFileInput.addEventListener('change', async (event) => {
     statusDiv.textContent = `Loading queue file (${lines.length} links)...`;
     progressDiv.style.display = 'block';
     progressBar.style.width = '0%';
-    downloadBtn.style.display = 'none';
-    stopBtn.style.display = 'block';
-    resumeBtn.style.display = 'none';
+    showDownloadingState();
 
     await chrome.runtime.sendMessage({
       action: 'downloadMediaFromList',
@@ -249,9 +317,7 @@ resumeBtn.addEventListener('click', async () => {
       statusDiv.className = 'status downloading';
       statusDiv.textContent = 'Resuming download...';
       progressDiv.style.display = 'block';
-      resumeBtn.style.display = 'none';
-      stopBtn.style.display = 'block';
-      downloadBtn.style.display = 'none';
+      showDownloadingState();
       startStatusPolling();
     } else {
       alert(`Error: ${response.error || 'Failed to resume download'}`);
@@ -270,10 +336,7 @@ stopBtn.addEventListener('click', async () => {
     statusDiv.textContent = 'Download stopped (can be resumed)';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download Media';
-    downloadBtn.style.display = 'block';
-    resumeBtn.style.display = 'block';
-    stopBtn.style.display = 'none';
+    showStoppedState();
     stopStatusPolling();
     
     setTimeout(() => {
@@ -292,9 +355,7 @@ clearBtn.addEventListener('click', async () => {
     statusDiv.textContent = 'Queue cleared';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download Media';
-    downloadBtn.style.display = 'block';
-    stopBtn.style.display = 'none';
+    showDefaultState();
     stopStatusPolling();
     
     setTimeout(() => {
@@ -335,18 +396,13 @@ function startStatusPolling() {
           progressText.textContent = 'Processing...';
         }
         
-        // Hide resume button when downloading
-        resumeBtn.style.display = 'none';
-        stopBtn.style.display = 'block';
-        downloadBtn.style.display = 'none';
+        showDownloadingState();
       } else {
         // Check if there's a saved state for resume
         if (response.hasSavedState) {
-          resumeBtn.style.display = 'block';
-          downloadBtn.style.display = 'block';
-          stopBtn.style.display = 'none';
+          showStoppedState();
         } else {
-          resumeBtn.style.display = 'none';
+          showDefaultState();
         }
         
         if (response.queueLength === 0 && !response.isDownloading) {
@@ -354,10 +410,7 @@ function startStatusPolling() {
           statusDiv.textContent = 'All downloads complete!';
           progressDiv.style.display = 'none';
           downloadBtn.disabled = false;
-          downloadBtn.textContent = 'Download Media';
-          downloadBtn.style.display = 'block';
-          stopBtn.style.display = 'none';
-          resumeBtn.style.display = 'none';
+          showDefaultState();
           stopStatusPolling();
           
           setTimeout(() => {
@@ -395,10 +448,7 @@ chrome.runtime.onMessage.addListener((message) => {
     statusDiv.textContent = 'Download stopped (can be resumed)';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download Media';
-    downloadBtn.style.display = 'block';
-    resumeBtn.style.display = 'block';
-    stopBtn.style.display = 'none';
+    showStoppedState();
     stopStatusPolling();
     
     setTimeout(() => {
@@ -414,9 +464,7 @@ chrome.runtime.onMessage.addListener((message) => {
     progressBar.style.width = '100%';
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
-    downloadBtn.textContent = 'Download Media';
-    downloadBtn.style.display = 'block';
-    stopBtn.style.display = 'none';
+    showDefaultState();
     stopStatusPolling();
     
     setTimeout(() => {
@@ -434,9 +482,7 @@ chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
   
   if (response.isDownloading) {
     downloadBtn.disabled = true;
-    downloadBtn.style.display = 'none';
-    resumeBtn.style.display = 'none';
-    stopBtn.style.display = 'block';
+    showDownloadingState();
     progressDiv.style.display = 'block';
     if (response.totalFiles > 0) {
       const progress = ((response.totalFiles - response.queueLength) / response.totalFiles) * 100;
@@ -446,7 +492,7 @@ chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
     startStatusPolling();
   } else if (response.hasSavedState) {
     // Show resume button if there's a saved state
-    resumeBtn.style.display = 'block';
+    showStoppedState();
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Previous download can be resumed';
   }

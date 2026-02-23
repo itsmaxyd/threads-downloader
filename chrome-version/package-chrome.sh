@@ -9,30 +9,28 @@ echo "Packaging Threads Media Downloader for Chrome..."
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-# Output file name
-OUTPUT_FILE="../threads-downloader-chrome-v1.1.3.zip"
+# Get version from manifest.json
+VERSION=$(grep '"version"' manifest.json | cut -d'"' -f4)
 
-# Files to include
+# Output file name
+OUTPUT_FILE="../threads-downloader-chrome-v${VERSION}.zip"
+
+# Files and directories to include
 FILES=(
   "manifest.json"
   "background.js"
   "content.js"
   "popup.js"
   "popup.html"
-  "icon16.png"
-  "icon48.png"
-  "icon128.png"
-  "README.md"
-  "INSTALL.md"
-  "DIFFERENCES.md"
+  "assets/"
 )
 
 # Check if all required files exist
 echo "Checking required files..."
 MISSING_FILES=0
 for file in "${FILES[@]}"; do
-  if [ ! -f "$file" ]; then
-    echo "ERROR: Missing required file: $file"
+  if [ ! -f "$file" ] && [ ! -d "$file" ]; then
+    echo "ERROR: Missing required file/directory: $file"
     MISSING_FILES=1
   fi
 done

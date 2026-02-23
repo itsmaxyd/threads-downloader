@@ -4,5 +4,7 @@ node_modules/
 .env
 extra
 docs/notes
-docs/media/screenshots/firefox/thumb
 docs/media/screenshots/promo_video.mp4
+plans/
+*.zip
+*.crx

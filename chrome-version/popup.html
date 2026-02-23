@@ -9,88 +9,165 @@
       box-sizing: border-box;
     }
     
+    :root {
+      /* Light mode (default) */
+      --bg-body: #f5f5f5;
+      --bg-container: #ffffff;
+      --bg-button-primary: #1976d2;
+      --bg-button-primary-hover: #1565c0;
+      --bg-button-secondary: #757575;
+      --bg-button-secondary-hover: #616161;
+      --bg-button-danger: #d32f2f;
+      --bg-button-danger-hover: #c62828;
+      --bg-status-idle: #e3f2fd;
+      --bg-status-extracting: #fff3e0;
+      --bg-status-downloading: #e8f5e9;
+      --bg-status-cooldown: #fce4ec;
+      --bg-progress: #e0e0e0;
+      --bg-progress-bar: #1976d2;
+      --text-primary: #333333;
+      --text-secondary: #666666;
+      --text-muted: #999999;
+      --text-status-idle: #1976d2;
+      --text-status-extracting: #f57c00;
+      --text-status-downloading: #388e3c;
+      --text-status-cooldown: #c2185b;
+      --border-color: #e0e0e0;
+      --input-bg: #ffffff;
+      --input-border: #dddddd;
+      --input-text: #333333;
+      --overlay-bg: rgba(0, 0, 0, 0.5);
+      --settings-bg: #ffffff;
+      --header-bg: transparent;
+    }
+    
+    [data-theme="dark"] {
+      --bg-body: #1a1a1a;
+      --bg-container: #2d2d2d;
+      --bg-button-primary: #42a5f5;
+      --bg-button-primary-hover: #1e88e5;
+      --bg-button-secondary: #616161;
+      --bg-button-secondary-hover: #757575;
+      --bg-button-danger: #ef5350;
+      --bg-button-danger-hover: #e53935;
+      --bg-status-idle: #1e3a5f;
+      --bg-status-extracting: #5d4037;
+      --bg-status-downloading: #1b5e20;
+      --bg-status-cooldown: #4a148c;
+      --bg-progress: #404040;
+      --bg-progress-bar: #42a5f5;
+      --text-primary: #e0e0e0;
+      --text-secondary: #b0b0b0;
+      --text-muted: #808080;
+      --text-status-idle: #90caf9;
+      --text-status-extracting: #ffcc80;
+      --text-status-downloading: #a5d6a7;
+      --text-status-cooldown: #ce93d8;
+      --border-color: #404040;
+      --input-bg: #3d3d3d;
+      --input-border: #505050;
+      --input-text: #e0e0e0;
+      --overlay-bg: rgba(0, 0, 0, 0.7);
+      --settings-bg: #2d2d2d;
+      --header-bg: transparent;
+    }
+    
     body {
-      width: 320px;
+      width: 340px;
       padding: 16px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
+      background: var(--bg-body);
+      transition: background 0.3s ease;
     }
     
     .container {
-      background: white;
-      border-radius: 8px;
+      background: var(--bg-container);
+      border-radius: 12px;
       padding: 16px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      transition: background 0.3s ease;
+    }
+    
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
     }
     
     h1 {
       font-size: 18px;
-      margin-bottom: 16px;
-      color: #333;
+      color: var(--text-primary);
+      font-weight: 600;
+      transition: color 0.3s ease;
+    }
+    
+    .theme-toggle {
+      background: var(--bg-button-secondary);
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+    
+    .theme-toggle:hover {
+      background: var(--bg-button-secondary-hover);
+    }
+    
+    .theme-toggle svg {
+      width: 20px;
+      height: 20px;
+      fill: white;
+    }
+    
+    .theme-toggle .sun-icon {
+      display: none;
+    }
+    
+    .theme-toggle .moon-icon {
+      display: block;
+    }
+    
+    [data-theme="dark"] .theme-toggle .sun-icon {
+      display: block;
+    }
+    
+    [data-theme="dark"] .theme-toggle .moon-icon {
+      display: none;
     }
     
     .status {
       padding: 12px;
-      border-radius: 6px;
+      border-radius: 8px;
       margin-bottom: 16px;
       font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s ease;
     }
     
     .status.idle {
-      background: #e3f2fd;
-      color: #1976d2;
+      background: var(--bg-status-idle);
+      color: var(--text-status-idle);
     }
     
     .status.extracting {
-      background: #fff3e0;
-      color: #f57c00;
+      background: var(--bg-status-extracting);
+      color: var(--text-status-extracting);
     }
     
     .status.downloading {
-      background: #e8f5e9;
-      color: #388e3c;
+      background: var(--bg-status-downloading);
+      color: var(--text-status-downloading);
     }
     
     .status.cooldown {
-      background: #fce4ec;
-      color: #c2185b;
-    }
-    
-    .button {
-      width: 100%;
-      padding: 12px;
-      background: #1976d2;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      margin-bottom: 12px;
-      transition: background 0.2s;
-    }
-    
-    .button:hover {
-      background: #1565c0;
-    }
-    
-    .button:disabled {
-      background: #ccc;
-      cursor: not-allowed;
-    }
-    
-    .button.secondary {
-      background: #757575;
-    }
-    
-    .button.secondary:hover {
-      background: #616161;
-    }
-    
-    .settings {
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid #e0e0e0;
+      background: var(--bg-status-cooldown);
+      color: var(--text-status-cooldown);
     }
     
     .setting-item {
@@ -100,28 +177,125 @@
     .setting-label {
       display: block;
       font-size: 12px;
-      color: #666;
-      margin-bottom: 4px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      font-weight: 500;
+      transition: color 0.3s ease;
     }
     
     .setting-input {
       width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
+      padding: 10px 12px;
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
       font-size: 14px;
+      background: var(--input-bg);
+      color: var(--input-text);
+      transition: all 0.3s ease;
     }
     
+    .setting-input:focus {
+      outline: none;
+      border-color: var(--bg-button-primary);
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+    }
+    
+    /* Button Grid */
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .button-grid.three-cols {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    
+    .button-grid.single-center {
+      grid-template-columns: 1fr;
+      max-width: 50%;
+      margin: 0 auto 10px auto;
+    }
+    
+    .icon-button {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 8px;
+      background: var(--bg-button-primary);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      min-height: 80px;
+    }
+    
+    .icon-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    
+    .icon-button:active {
+      transform: translateY(0);
+    }
+    
+    .icon-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .icon-button img {
+      width: 32px;
+      height: 32px;
+      margin-bottom: 6px;
+      filter: brightness(0) invert(1);
+    }
+    
+    .icon-button span {
+      font-size: 11px;
+      font-weight: 600;
+      text-align: center;
+      line-height: 1.2;
+    }
+    
+    .icon-button.secondary {
+      background: var(--bg-button-secondary);
+    }
+    
+    .icon-button.secondary:hover {
+      background: var(--bg-button-secondary-hover);
+    }
+    
+    .icon-button.danger {
+      background: var(--bg-button-danger);
+    }
+    
+    .icon-button.danger:hover {
+      background: var(--bg-button-danger-hover);
+    }
+    
+    .icon-button.settings-btn {
+      background: var(--bg-button-secondary);
+    }
+    
+    .icon-button.settings-btn:hover {
+      background: var(--bg-button-secondary-hover);
+    }
+    
+    /* Progress */
     .progress {
       margin-top: 12px;
       font-size: 12px;
-      color: #666;
     }
     
     .progress-bar-container {
       width: 100%;
       height: 8px;
-      background: #e0e0e0;
+      background: var(--bg-progress);
       border-radius: 4px;
       overflow: hidden;
       margin-top: 8px;
@@ -129,7 +303,7 @@
     
     .progress-bar {
       height: 100%;
-      background: #1976d2;
+      background: var(--bg-progress-bar);
       border-radius: 4px;
       transition: width 0.3s ease;
       width: 0%;
@@ -137,33 +311,175 @@
     
     .progress-text {
       margin-top: 4px;
-      font-size: 11px;
-      color: #666;
+      font-size: 12px;
+      color: var(--text-secondary);
+      transition: color 0.3s ease;
     }
     
-    .button.danger {
-      background: #d32f2f;
-    }
-    
-    .button.danger:hover {
-      background: #c62828;
-    }
-    
+    /* Info */
     .info {
       font-size: 11px;
-      color: #999;
+      color: var(--text-muted);
+      margin-top: 12px;
+      line-height: 1.5;
+      text-align: center;
+      transition: color 0.3s ease;
+    }
+    
+    /* Settings Panel Overlay */
+    .settings-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--overlay-bg);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    
+    .settings-overlay.active {
+      display: flex;
+    }
+    
+    .settings-panel {
+      background: var(--settings-bg);
+      border-radius: 12px;
+      padding: 20px;
+      width: 100%;
+      max-width: 300px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      animation: slideIn 0.3s ease;
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .settings-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .settings-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    
+    .settings-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+    
+    .settings-close:hover {
+      color: var(--text-primary);
+    }
+    
+    .settings-content .setting-item {
+      margin-bottom: 16px;
+    }
+    
+    .save-settings-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--bg-button-primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
       margin-top: 8px;
-      line-height: 1.4;
+    }
+    
+    .save-settings-btn:hover {
+      background: var(--bg-button-primary-hover);
+    }
+    
+    /* Hidden file input */
+    .hidden-input {
+      display: none;
+    }
+    
+    /* Resume and Stop buttons - full width when visible */
+    .action-button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 10px;
+    }
+    
+    .action-button.primary {
+      background: var(--bg-button-primary);
+      color: white;
+    }
+    
+    .action-button.primary:hover {
+      background: var(--bg-button-primary-hover);
+    }
+    
+    .action-button.danger {
+      background: var(--bg-button-danger);
+      color: white;
+    }
+    
+    .action-button.danger:hover {
+      background: var(--bg-button-danger-hover);
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Threads Downloader</h1>
+    <div class="header">
+      <h1>Threads Media Downloader</h1>
+      <button id="themeToggle" class="theme-toggle" title="Toggle theme">
+        <svg class="moon-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <svg class="sun-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2"/>
+          <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2"/>
+          <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2"/>
+          <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </button>
+    </div>
     
     <div id="status" class="status idle">Ready</div>
     
-    <div class="setting-item" style="margin-bottom: 12px;">
+    <div class="setting-item">
       <label class="setting-label">Download Options</label>
       <select id="downloadLimitSelect" class="setting-input">
         <option value="all">Download All Media</option>
@@ -172,18 +488,51 @@
       </select>
     </div>
 
-    <div class="setting-item" style="margin-bottom: 12px;">
+    <div class="setting-item">
       <label class="setting-label">Filename prefix (username, optional)</label>
       <input type="text" id="usernameInput" class="setting-input" placeholder="threads-user (optional)">
     </div>
     
-    <button id="downloadBtn" class="button">Download Media</button>
-    <button id="prepareBtn" class="button secondary">Prepare Queue (save links)</button>
-    <button id="loadBtn" class="button secondary">Load Queue File</button>
-    <input type="file" id="queueFileInput" accept=".txt" style="display:none" />
-    <button id="resumeBtn" class="button" style="display: none;">Resume Download</button>
-    <button id="stopBtn" class="button danger" style="display: none;">Stop Download</button>
-    <button id="clearBtn" class="button secondary">Clear Queue</button>
+    <!-- Main Action Buttons -->
+    <div class="button-grid" id="mainButtons">
+      <button id="downloadBtn" class="icon-button">
+        <img src="assets/app_icons/dl-media.png" alt="Download">
+        <span>Download Media</span>
+      </button>
+      <button id="prepareBtn" class="icon-button secondary">
+        <img src="assets/app_icons/prep-queue.png" alt="Prepare">
+        <span>Prepare Queue</span>
+      </button>
+    </div>
+    
+    <!-- Action Buttons (Stop/Resume) - Centered -->
+    <div class="button-grid single-center" id="actionButtons" style="display: none;">
+      <button id="stopBtn" class="icon-button danger">
+        <img src="assets/app_icons/stop-dl.png" alt="Stop">
+        <span>Stop</span>
+      </button>
+      <button id="resumeBtn" class="icon-button">
+        <img src="assets/app_icons/resume-dl.png" alt="Resume">
+        <span>Resume</span>
+      </button>
+    </div>
+    
+    <div class="button-grid three-cols">
+      <button id="loadBtn" class="icon-button secondary">
+        <img src="assets/app_icons/load-links.png" alt="Load">
+        <span>Load Queue</span>
+      </button>
+      <button id="clearBtn" class="icon-button danger">
+        <img src="assets/app_icons/clr-queue.png" alt="Clear">
+        <span>Clear Queue</span>
+      </button>
+      <button id="settingsBtn" class="icon-button settings-btn">
+        <img src="assets/app_icons/settings.png" alt="Settings">
+        <span>Settings</span>
+      </button>
+    </div>
+    
+    <input type="file" id="queueFileInput" accept=".txt" class="hidden-input" />
     
     <div id="progress" class="progress" style="display: none;">
       <div id="progressText" class="progress-text"></div>
@@ -192,26 +541,34 @@
       </div>
     </div>
     
-    <div class="settings">
-      <div class="setting-item">
-        <label class="setting-label">Cooldown between downloads (ms)</label>
-        <input type="number" id="cooldownInput" class="setting-input" value="2000" min="500" step="500">
-      </div>
-      
-      <div class="setting-item">
-        <label class="setting-label">Cooldown after 100 downloads (ms)</label>
-        <input type="number" id="cooldown100Input" class="setting-input" value="120000" min="60000" step="60000">
-      </div>
-      
-      <button id="saveSettingsBtn" class="button secondary" style="margin-top: 8px;">Save Settings</button>
-    </div>
-    
     <div class="info">
-      Navigate to a Threads user media page (e.g., threads.com/@username/media) and click "Download All Media"
+      Navigate to a Threads user media page (e.g., threads.com/@username/media) and click "Download Media"
+    </div>
+  </div>
+  
+  <!-- Settings Panel Overlay -->
+  <div id="settingsOverlay" class="settings-overlay">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <span class="settings-title">Settings</span>
+        <button id="closeSettings" class="settings-close">&times;</button>
+      </div>
+      <div class="settings-content">
+        <div class="setting-item">
+          <label class="setting-label">Cooldown between downloads (ms)</label>
+          <input type="number" id="cooldownInput" class="setting-input" value="2000" min="500" step="500">
+        </div>
+        
+        <div class="setting-item">
+          <label class="setting-label">Cooldown after 100 downloads (ms)</label>
+          <input type="number" id="cooldown100Input" class="setting-input" value="120000" min="60000" step="60000">
+        </div>
+        
+        <button id="saveSettingsBtn" class="save-settings-btn">Save Settings</button>
+      </div>
     </div>
   </div>
   
   <script src="popup.js"></script>
 </body>
 </html>
-

@@ -16,14 +16,15 @@ zip -r "${PACKAGE_NAME}" \
   content.js \
   popup.html \
   popup.js \
-  icon16.png \
-  icon48.png \
-  icon128.png \
-  -x "*.git*" "*.md" "*.DS_Store" "*.gitignore" "LICENSE" "INSTALL.md" "README.md" "SECURITY.md" "PACKAGING.md" "package.sh"
+  assets/ \
+  -x "*.git*" "*.md" "*.DS_Store" "*.gitignore" "LICENSE" "INSTALL.md" "README.md" "SECURITY.md" "PACKAGING.md" "package.sh" "plans/*"
 
 if [ $? -eq 0 ]; then
   echo "✅ Package created: ${PACKAGE_NAME}"
   echo "📦 File size: $(du -h "${PACKAGE_NAME}" | cut -f1)"
+  echo ""
+  echo "Package contents:"
+  unzip -l "${PACKAGE_NAME}"
   echo ""
   echo "Ready for submission to Firefox Add-ons!"
   echo "Upload this file at: https://addons.mozilla.org/developers/addon/submit/"
@@ -31,4 +32,3 @@ else
   echo "❌ Error creating package"
   exit 1
 fi
-
