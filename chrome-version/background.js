@@ -1,6 +1,20 @@
 // Background service worker for managing downloads with rate limiting
 // Chrome Manifest V3 version
 
+// Initialize defaults on install
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.storage.local.get(['cooldownMs', 'cooldownAfter100', 'redirectSetting'], (result) => {
+    const defaults = {};
+    if (result.cooldownMs === undefined) defaults.cooldownMs = 2000;
+    if (result.cooldownAfter100 === undefined) defaults.cooldownAfter100 = 120000;
+    if (result.redirectSetting === undefined) defaults.redirectSetting = 'notify';
+
+    if (Object.keys(defaults).length > 0) {
+      chrome.storage.local.set(defaults);
+    }
+  });
+});
+
 let downloadQueue = [];
 let isDownloading = false;
 let shouldStop = false;

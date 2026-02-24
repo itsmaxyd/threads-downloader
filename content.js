@@ -5,21 +5,21 @@ let isExtracting = false;
 // Helper function to parse count strings like "1.2K", "10K", "559"
 function parseCount(str) {
   if (!str) return 0;
-  
+
   str = str.trim().toLowerCase();
-  
+
   // Handle K (thousands)
   if (str.endsWith('k')) {
     const num = parseFloat(str.slice(0, -1));
     return isNaN(num) ? 0 : Math.round(num * 1000);
   }
-  
+
   // Handle M (millions)
   if (str.endsWith('m')) {
     const num = parseFloat(str.slice(0, -1));
     return isNaN(num) ? 0 : Math.round(num * 1000000);
   }
-  
+
   // Handle plain numbers
   const num = parseInt(str, 10);
   return isNaN(num) ? 0 : num;
@@ -31,7 +31,8 @@ function isProfilePage() {
   // Match /@username but NOT /@username/media or /@username/post/...
   // Handle query parameters and fragments by checking pathname only
   const pathname = window.location.pathname;
-  const profilePattern = /^\/@[^/]+$/;
+  // Allow optional trailing slash
+  const profilePattern = /^\/@[^/]+\/?$/;
   return profilePattern.test(pathname);
 }
 
@@ -41,7 +42,11 @@ function getMediaUrl() {
   // Convert /@username to /@username/media
   // Preserve query parameters and fragments
   const origin = window.location.origin;
-  const pathname = window.location.pathname;
+  let pathname = window.location.pathname;
+  // Remove trailing slash if present to avoid double slash
+  if (pathname.endsWith('/')) {
+    pathname = pathname.slice(0, -1);
+  }
   const search = window.location.search;
   const hash = window.location.hash;
   return `${origin}${pathname}/media${search}${hash}`;
@@ -60,7 +65,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: 'Already extracting' });
       return;
     }
-    
+
     const limit = message.limit || null; // null means all, otherwise number
     const prepareOnly = !!message.prepareOnly;
     const usernameOverride = message.usernameOverride || null;
@@ -69,7 +74,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
     });
-    
+
     return true; // Keep message channel open
   } else if (message.action === 'checkProfilePage') {
     sendResponse({
@@ -82,7 +87,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
-  
+
   return false;
 });
 
@@ -133,14 +138,14 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
       }
       // Accept URLs from known domains or with media keywords
       const isValid = url.includes('scontent') ||
-             url.includes('cdn') ||
-             url.includes('fbcdn') ||
-             url.includes('instagram') ||
-             url.includes('threads') ||
-             url.includes('/image/') ||
-             url.includes('/video/') ||
-             url.includes('/media/') ||
-             url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
+        url.includes('cdn') ||
+        url.includes('fbcdn') ||
+        url.includes('instagram') ||
+        url.includes('threads') ||
+        url.includes('/image/') ||
+        url.includes('/video/') ||
+        url.includes('/media/') ||
+        url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
       if (!isValid) {
       }
       return isValid;
@@ -225,10 +230,10 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 function findMediaContainer() {
   // Try specific selectors first (keep for backward compatibility)
   let container = document.querySelector('[data-testid="media-grid"]') ||
-         document.querySelector('.media-grid') ||
-         document.querySelector('div[role="grid"]') ||
-         document.querySelector('[data-testid="user-profile-media-grid"]') ||
-         document.querySelector('.user-profile-media-grid');
+    document.querySelector('.media-grid') ||
+    document.querySelector('div[role="grid"]') ||
+    document.querySelector('[data-testid="user-profile-media-grid"]') ||
+    document.querySelector('.user-profile-media-grid');
 
   if (container) {
     return container;
@@ -261,9 +266,9 @@ function findMediaContainer() {
 
   // Fallback: look for main content area
   container = document.querySelector('main') ||
-             document.querySelector('[role="main"]') ||
-             document.querySelector('.main') ||
-             document.querySelector('#main');
+    document.querySelector('[role="main"]') ||
+    document.querySelector('.main') ||
+    document.querySelector('#main');
 
   if (container) {
     return container;
@@ -276,7 +281,7 @@ function findMediaContainer() {
 // Extract datetime from a post's article element
 function extractPostDatetime(articleElement) {
   if (!articleElement) return null;
-  
+
   const timeElement = articleElement.querySelector('time[datetime]');
   if (timeElement) {
     const datetime = timeElement.getAttribute('datetime');
@@ -288,7 +293,7 @@ function extractPostDatetime(articleElement) {
 // Extract human-readable datetime from title attribute
 function extractDatetimeDisplay(articleElement) {
   if (!articleElement) return null;
-  
+
   const timeElement = articleElement.querySelector('time[title]');
   if (timeElement) {
     return timeElement.getAttribute('title');
@@ -299,7 +304,7 @@ function extractDatetimeDisplay(articleElement) {
 // Extract post permalink
 function extractPermalink(articleElement, username) {
   if (!articleElement) return null;
-  
+
   const link = articleElement.querySelector('a[href*="/post/"]');
   if (link) {
     const href = link.getAttribute('href');
@@ -315,10 +320,10 @@ function extractPermalink(articleElement, username) {
 // Extract all media URLs from an article element
 function extractArticleMediaUrls(articleElement) {
   if (!articleElement) return [];
-  
+
   const mediaUrls = [];
   const mediaElements = articleElement.querySelectorAll('img, video, video source, picture source');
-  
+
   mediaElements.forEach(element => {
     const url = extractHighResUrl(element);
     if (url && url.startsWith('http')) {
@@ -328,18 +333,18 @@ function extractArticleMediaUrls(articleElement) {
       }
     }
   });
-  
+
   return mediaUrls;
 }
 
 // Extract post content/caption
 function extractPostContent(articleElement) {
   if (!articleElement) return null;
-  
+
   // Find the span with dir="auto" containing the post text
   const contentSpans = articleElement.querySelectorAll('span[dir="auto"]');
   let content = '';
-  
+
   contentSpans.forEach(span => {
     // Get direct text content, avoiding nested spans that might be counts
     const text = span.textContent.trim();
@@ -348,14 +353,14 @@ function extractPostContent(articleElement) {
       content += text + ' ';
     }
   });
-  
+
   return content.trim() || null;
 }
 
 // Extract like count
 function extractLikeCount(articleElement) {
   if (!articleElement) return 0;
-  
+
   const likeSvg = articleElement.querySelector('svg[aria-label="Like"]');
   if (likeSvg) {
     // Find the count in nearby span with class x1o0tod
@@ -382,7 +387,7 @@ function extractLikeCount(articleElement) {
 // Extract reply count
 function extractReplyCount(articleElement) {
   if (!articleElement) return 0;
-  
+
   const replySvg = articleElement.querySelector('svg[aria-label="Reply"]');
   if (replySvg) {
     // Find the count in nearby span with class x1o0tod
@@ -435,16 +440,16 @@ function findParentArticle(element) {
 function extractMediaUrls(container, mediaMap, metadataMap = null) {
   // APPROACH 1: Use time elements as post anchors to get datetime
   const timeElements = container.querySelectorAll('time[datetime]');
-  
+
   timeElements.forEach(timeElement => {
     const datetime = timeElement.getAttribute('datetime');
     const postLink = timeElement.closest('a[href*="/post/"]');
     const permalink = postLink ? postLink.href : null;
-    
+
     // Find images associated with this post (traverse up to find container with images)
     let postContainer = timeElement;
     let foundImages = [];
-    
+
     for (let i = 0; i < 10 && foundImages.length === 0; i++) {
       // Get ALL images in container, not just fbcdn
       const images = postContainer.querySelectorAll('img');
@@ -454,31 +459,31 @@ function extractMediaUrls(container, mediaMap, metadataMap = null) {
       if (foundImages.length > 0) break;
       postContainer = postContainer.parentElement;
     }
-    
+
     // Add each image to the map with datetime
     foundImages.forEach(img => {
       const url = extractHighResUrl(img);
       if (url && !mediaMap.has(url)) {
-        mediaMap.set(url, { 
-          url, 
-          type: 'image', 
+        mediaMap.set(url, {
+          url,
+          type: 'image',
           datetime,
           permalink
         });
       }
     });
   });
-  
+
   // APPROACH 2: Scan ALL media elements directly (spec-style extraction)
   const allMediaElements = container.querySelectorAll('img, video, video source, picture source');
-  
+
   allMediaElements.forEach(element => {
     const url = extractHighResUrl(element);
     if (url && !mediaMap.has(url)) {
       // Skip profile pictures and obvious non-post images
       if (url.includes('/v/t51.2885-19/')) return; // Profile pics
       if (url.includes('avatar') || url.includes('icon') || url.includes('placeholder')) return;
-      
+
       // Try to find datetime from nearby time element
       let datetime = null;
       let permalink = null;
@@ -494,41 +499,41 @@ function extractMediaUrls(container, mediaMap, metadataMap = null) {
         parent = parent.parentElement;
         if (!parent) break;
       }
-      
+
       const type = element.tagName === 'VIDEO' || element.tagName === 'SOURCE' ? 'video' : 'image';
       mediaMap.set(url, { url, type, datetime, permalink });
     }
   });
-  
+
 }
 
 // Check if an image element is a post image (not profile pic, icon, etc.)
 function isPostImage(img) {
   const url = img.src || img.dataset.src || img.dataset.url || '';
-  
+
   // Skip profile pictures
   if (url.includes('/v/t51.2885-19/')) return false;
-  
+
   // Skip obvious non-post images
   if (url.includes('avatar')) return false;
   if (url.includes('icon')) return false;
   if (url.includes('placeholder')) return false;
-  
+
   // Check image dimensions (profile pics are usually small and square)
   if (img.naturalWidth > 0 && img.naturalHeight > 0) {
     // Skip small images (likely icons)
     if (img.naturalWidth < 50 || img.naturalHeight < 50) return false;
   }
-  
+
   // Accept images from known CDN domains
   if (url.includes('fbcdn')) return true;
   if (url.includes('scontent')) return true;
   if (url.includes('cdninstagram')) return true;
   if (url.includes('threads')) return true;
-  
+
   // Accept images with common media extensions
   if (url.match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i)) return true;
-  
+
   return false;
 }
 
@@ -537,37 +542,37 @@ function isPostImage(img) {
 function extractAllMetadata(container, username) {
   const metadataArray = [];
   const seenPosts = new Set();
-  
+
   // Use time elements as post anchors
   const timeElements = container.querySelectorAll('time[datetime]');
-  
+
   timeElements.forEach(timeElement => {
     const datetime = timeElement.getAttribute('datetime');
     const datetimeDisplay = timeElement.getAttribute('title');
-    
+
     // Get post link (time is inside the link)
     const postLink = timeElement.closest('a[href*="/post/"]');
     const permalink = postLink ? postLink.href : null;
-    
+
     // Skip if we've already processed this post
     const postKey = permalink || datetime;
     if (seenPosts.has(postKey)) return;
     seenPosts.add(postKey);
-    
+
     // Find images for this post (traverse up to find container with images)
     let postContainer = timeElement;
     let postImages = [];
-    
+
     for (let i = 0; i < 10; i++) {
       const images = postContainer.querySelectorAll('img');
       postImages = Array.from(images).filter(img => isPostImage(img));
       if (postImages.length > 0) break;
       postContainer = postContainer.parentElement;
     }
-    
+
     // Use extractHighResUrl to get best quality URLs
     const mediaUrls = postImages.map(img => extractHighResUrl(img)).filter(url => url);
-    
+
     // Extract content/caption (if available) - look for text near the post
     let postContent = null;
     // Try to find text content in the post container
@@ -585,11 +590,11 @@ function extractAllMetadata(container, username) {
         postContent = textParts.join(' ').substring(0, 500); // Limit length
       }
     }
-    
+
     // Extract like and reply counts from the post container
     let likeCount = 0;
     let replyCount = 0;
-    
+
     // Try to find engagement counts in the post container
     if (postContainer) {
       // Method 1: Look for specific SVG icons with aria-labels
@@ -609,7 +614,7 @@ function extractAllMetadata(container, username) {
           }
         }
       }
-      
+
       const replySvg = postContainer.querySelector('svg[aria-label="Reply"]');
       if (replySvg) {
         const parentDiv = replySvg.closest('div');
@@ -624,21 +629,21 @@ function extractAllMetadata(container, username) {
           }
         }
       }
-      
+
       // Method 2: Look for elements with specific roles or data attributes
       // Threads uses specific button structures for engagement
       const buttons = postContainer.querySelectorAll('button, [role="button"]');
       for (const btn of buttons) {
         const ariaLabel = btn.getAttribute('aria-label') || '';
         const text = btn.textContent.trim();
-        
+
         if (ariaLabel.toLowerCase().includes('like') && text) {
           const countMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*(likes?)?$/i);
           if (countMatch && likeCount === 0) {
             likeCount = parseCount(countMatch[1]);
           }
         }
-        
+
         if (ariaLabel.toLowerCase().includes('repl') && text) {
           const countMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*(replies?)?$/i);
           if (countMatch && replyCount === 0) {
@@ -646,7 +651,7 @@ function extractAllMetadata(container, username) {
           }
         }
       }
-      
+
       // Method 3: Look for common engagement count patterns
       // Engagement counts often appear in specific span structures
       const allSpans = postContainer.querySelectorAll('span');
@@ -658,18 +663,18 @@ function extractAllMetadata(container, username) {
           if (likeMatch && likeCount === 0) {
             likeCount = parseCount(likeMatch[1]);
           }
-          
+
           const replyMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*replies?$/i);
           if (replyMatch && replyCount === 0) {
             replyCount = parseCount(replyMatch[1]);
           }
         }
       }
-      
+
       if (likeCount === 0 && replyCount === 0) {
       }
     }
-    
+
     const metadata = {
       username: username,
       datetime_iso: datetime,
@@ -680,13 +685,13 @@ function extractAllMetadata(container, username) {
       like_count: likeCount,
       reply_count: replyCount
     };
-    
+
     if (mediaUrls.length > 0 || postContent) {
       metadataArray.push(metadata);
     } else {
     }
   });
-  
+
   return metadataArray;
 }
 
@@ -709,15 +714,15 @@ function extractHighResUrl(element) {
       }
     }
   }
-  
+
   // Try multiple data attributes for lazy-loaded images
   let url = element.dataset.src ||
-            element.dataset.url ||
-            element.dataset.image ||
-            element.dataset.lazySrc ||
-            element.dataset.original ||
-            element.dataset.srcset ||
-            element.src;
+    element.dataset.url ||
+    element.dataset.image ||
+    element.dataset.lazySrc ||
+    element.dataset.original ||
+    element.dataset.srcset ||
+    element.src;
 
   // For video/source elements
   if ((element.tagName === 'VIDEO' || element.tagName === 'SOURCE')) {
@@ -783,4 +788,19 @@ async function handleInfiniteScroll(container, urls, limit = null) {
 if (window.location.pathname.includes('/media')) {
   // Could add a visual indicator here if needed
 }
+
+// Check for auto-redirect on page load
+(async () => {
+  if (isProfilePage()) {
+    try {
+      const result = await browser.storage.local.get(['redirectSetting']);
+      if (result.redirectSetting === 'auto') {
+        const mediaUrl = getMediaUrl();
+        window.location.href = mediaUrl;
+      }
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }
+})();
 

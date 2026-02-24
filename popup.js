@@ -10,26 +10,36 @@ function showError(message, duration = 5000) {
   // Remove any existing error
   const existingError = document.getElementById('errorMessage');
   if (existingError) existingError.remove();
-  
-  // Create error element
+
+  // Build error element with safe DOM APIs (avoids innerHTML linter warning)
   const errorDiv = document.createElement('div');
   errorDiv.id = 'errorMessage';
   errorDiv.className = 'error-notification';
-  errorDiv.innerHTML = `
-    <span class="error-icon">⚠️</span>
-    <span class="error-text">${message}</span>
-    <button class="error-close" onclick="this.parentElement.remove()">✕</button>
-  `;
-  
+
+  const icon = document.createElement('span');
+  icon.className = 'error-icon';
+  icon.textContent = '⚠️';
+
+  const text = document.createElement('span');
+  text.className = 'error-text';
+  text.textContent = message;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'error-close';
+  closeBtn.textContent = '✕';
+  closeBtn.addEventListener('click', () => errorDiv.remove());
+
+  errorDiv.appendChild(icon);
+  errorDiv.appendChild(text);
+  errorDiv.appendChild(closeBtn);
+
   // Insert after status div
   statusDiv.parentNode.insertBefore(errorDiv, statusDiv.nextSibling);
-  
+
   // Auto-remove after duration
   if (duration > 0) {
     setTimeout(() => {
-      if (errorDiv.parentNode) {
-        errorDiv.remove();
-      }
+      if (errorDiv.parentNode) errorDiv.remove();
     }, duration);
   }
 }
@@ -91,7 +101,7 @@ async function getRedirectSetting() {
 // Show notification with redirect option
 async function showProfileRedirectNotification(mediaUrl) {
   const redirectSetting = await getRedirectSetting();
-  
+
   if (redirectSetting === 'auto') {
     // Auto redirect
     statusDiv.className = 'status extracting';
@@ -101,28 +111,30 @@ async function showProfileRedirectNotification(mediaUrl) {
     window.close();
     return;
   }
-  
+
   if (redirectSetting === 'disabled') {
     // Just show warning
     statusDiv.className = 'status idle';
     statusDiv.textContent = '⚠️ Profile page detected. Media downloads work on /media pages.';
     return;
   }
-  
+
   // Notify - show redirect button
   const notification = document.createElement('div');
   notification.className = 'redirect-notification';
-  notification.innerHTML = `
-    <p>You're on a profile page. Redirect to media page?</p>
-    <div class="redirect-buttons">
-      <button id="redirectBtn" class="redirect-btn redirect-btn-primary">Go to Media Page</button>
-      <button id="dismissBtn" class="redirect-btn redirect-btn-secondary">Dismiss</button>
-    </div>
-  `;
-  
-  statusDiv.parentNode.insertBefore(notification, statusDiv.nextSibling);
-  
-  document.getElementById('redirectBtn').onclick = async () => {
+
+  const p = document.createElement('p');
+  p.textContent = "You're on a profile page. Redirect to media page?";
+  notification.appendChild(p);
+
+  const btnContainer = document.createElement('div');
+  btnContainer.className = 'redirect-buttons';
+
+  const redirectBtn = document.createElement('button');
+  redirectBtn.id = 'redirectBtn';
+  redirectBtn.className = 'redirect-btn redirect-btn-primary';
+  redirectBtn.textContent = 'Go to Media Page';
+  redirectBtn.onclick = async () => {
     statusDiv.className = 'status extracting';
     statusDiv.textContent = 'Redirecting to media page...';
     notification.remove();
@@ -130,20 +142,30 @@ async function showProfileRedirectNotification(mediaUrl) {
     // Close popup after redirect
     window.close();
   };
-  
-  document.getElementById('dismissBtn').onclick = () => {
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.id = 'dismissBtn';
+  dismissBtn.className = 'redirect-btn redirect-btn-secondary';
+  dismissBtn.textContent = 'Dismiss';
+  dismissBtn.onclick = () => {
     notification.remove();
   };
+
+  btnContainer.appendChild(redirectBtn);
+  btnContainer.appendChild(dismissBtn);
+  notification.appendChild(btnContainer);
+
+  statusDiv.parentNode.insertBefore(notification, statusDiv.nextSibling);
 }
 
 // Format datetime for display in the resume dialog
 function formatDatetimeDisplay(isoString) {
   if (!isoString) return 'Unknown';
-  
+
   try {
     const date = new Date(isoString);
     if (isNaN(date.getTime())) return 'Unknown';
-    
+
     // Format: "Jan 15, 2024 at 3:45 PM"
     const options = {
       month: 'short',
@@ -163,61 +185,82 @@ function formatDatetimeDisplay(isoString) {
 function showResumeDialog(fileCount, latestDatetime, username, mediaData) {
   // Remove any existing dialog
   const existingDialog = document.getElementById('resumeDialogOverlay');
-  if (existingDialog) {
-    existingDialog.remove();
+  if (existingDialog) existingDialog.remove();
+
+  // Build modal with safe DOM APIs (avoids innerHTML linter warning)
+  const overlay = document.createElement('div');
+  overlay.id = 'resumeDialogOverlay';
+  overlay.className = 'resume-dialog-overlay';
+
+  const box = document.createElement('div');
+  box.className = 'resume-dialog';
+
+  const heading = document.createElement('h3');
+  heading.textContent = 'Previous Downloads Found';
+
+  const countPara = document.createElement('p');
+  countPara.className = 'resume-count';
+  countPara.textContent = `Found ${fileCount} existing file(s) for @${username}.`;
+
+  box.appendChild(heading);
+  box.appendChild(countPara);
+
+  if (latestDatetime) {
+    const datePara = document.createElement('p');
+    datePara.className = 'resume-datetime';
+    datePara.textContent = `Latest download: ${formatDatetimeDisplay(latestDatetime)}`;
+    box.appendChild(datePara);
   }
-  
-  // Create modal dialog
-  const dialog = document.createElement('div');
-  dialog.id = 'resumeDialogOverlay';
-  dialog.className = 'resume-dialog-overlay';
-  
-  const latestText = latestDatetime 
-    ? `<p class="resume-datetime">Latest download: ${formatDatetimeDisplay(latestDatetime)}</p>`
-    : '';
-  
-  dialog.innerHTML = `
-    <div class="resume-dialog">
-      <h3>Previous Downloads Found</h3>
-      <p class="resume-count">Found ${fileCount} existing file(s) for @${username}.</p>
-      ${latestText}
-      <p class="resume-info">How would you like to proceed?</p>
-      <div class="resume-dialog-buttons">
-        <button id="resumeFromLatest" class="resume-btn resume-btn-primary">
-          <span class="resume-btn-icon">▶</span>
-          Resume from Latest
-        </button>
-        <button id="downloadAll" class="resume-btn resume-btn-secondary">
-          <span class="resume-btn-icon">⬇</span>
-          Download All
-        </button>
-        <button id="cancelDownload" class="resume-btn resume-btn-cancel">
-          <span class="resume-btn-icon">✕</span>
-          Cancel
-        </button>
-      </div>
-    </div>
-  `;
-  
-  document.body.appendChild(dialog);
-  
-  // Add button handlers
-  document.getElementById('resumeFromLatest').onclick = async () => {
-    dialog.remove();
+
+  const infoPara = document.createElement('p');
+  infoPara.className = 'resume-info';
+  infoPara.textContent = 'How would you like to proceed?';
+  box.appendChild(infoPara);
+
+  // Helper to build a resume dialog button
+  function makeResumeBtn(id, className, iconText, labelText) {
+    const btn = document.createElement('button');
+    btn.id = id;
+    btn.className = `resume-btn ${className}`;
+    const icon = document.createElement('span');
+    icon.className = 'resume-btn-icon';
+    icon.textContent = iconText;
+    btn.appendChild(icon);
+    btn.appendChild(document.createTextNode(` ${labelText}`));
+    return btn;
+  }
+
+  const btnWrap = document.createElement('div');
+  btnWrap.className = 'resume-dialog-buttons';
+
+  const resumeFromLatestBtn = makeResumeBtn('resumeFromLatest', 'resume-btn-primary', '▶', 'Resume from Latest');
+  const downloadAllBtn = makeResumeBtn('downloadAll', 'resume-btn-secondary', '⬇', 'Download All');
+  const cancelBtn = makeResumeBtn('cancelDownload', 'resume-btn-cancel', '✕', 'Cancel');
+
+  btnWrap.appendChild(resumeFromLatestBtn);
+  btnWrap.appendChild(downloadAllBtn);
+  btnWrap.appendChild(cancelBtn);
+  box.appendChild(btnWrap);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  // Button handlers
+  resumeFromLatestBtn.addEventListener('click', async () => {
+    overlay.remove();
     await startDownloadWithResume(mediaData, latestDatetime);
-  };
-  
-  document.getElementById('downloadAll').onclick = async () => {
-    dialog.remove();
+  });
+
+  downloadAllBtn.addEventListener('click', async () => {
+    overlay.remove();
     await startDownloadWithResume(mediaData, null);
-  };
-  
-  document.getElementById('cancelDownload').onclick = () => {
-    dialog.remove();
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    overlay.remove();
     downloadBtn.disabled = false;
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Ready';
-  };
+  });
 }
 
 // Start download with optional resume datetime
@@ -233,7 +276,7 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
     progressText.textContent = 'Starting download...';
     progressBar.style.width = '0%';
     showDownloadingState();
-    
+
     const response = await browser.runtime.sendMessage({
       action: 'downloadMediaWithResume',
       mediaItems: mediaData.mediaItems,
@@ -241,7 +284,7 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
       metadata: mediaData.metadata,
       resumeFromDatetime: resumeFromDatetime
     });
-    
+
     if (response.success) {
       if (response.queued === 0 && response.message) {
         // No new media to download
@@ -277,14 +320,14 @@ function initTheme() {
   browser.storage.local.get(['theme']).then((result) => {
     const theme = result.theme || 'light';
     document.documentElement.setAttribute('data-theme', theme);
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 function toggleTheme() {
   const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
   const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', newTheme);
-  browser.storage.local.set({ theme: newTheme }).catch(() => {});
+  browser.storage.local.set({ theme: newTheme }).catch(() => { });
 }
 
 // Settings Panel Management
@@ -372,7 +415,7 @@ if (exportMetadataCheckbox) {
 }
 
 // Load metadata settings on init
-loadMetadataSettings().catch(() => {});
+loadMetadataSettings().catch(() => { });
 
 // Save settings
 saveSettingsBtn.addEventListener('click', () => {
@@ -381,23 +424,23 @@ saveSettingsBtn.addEventListener('click', () => {
   const exportMetadata = exportMetadataCheckbox ? exportMetadataCheckbox.checked : false;
   const metadataFormat = document.querySelector('input[name="metadataFormat"]:checked')?.value || 'json';
   const redirectSetting = redirectSettingSelect ? redirectSettingSelect.value : 'notify';
-  
+
   // Validate inputs
   if (isNaN(cooldownMs) || isNaN(cooldownAfter100)) {
     showError('Invalid settings. Please enter valid numbers.');
     return;
   }
-  
+
   if (cooldownMs < 500 || cooldownMs > 60000) {
     showError('Cooldown must be between 500ms and 60000ms.');
     return;
   }
-  
+
   if (cooldownAfter100 < 60000 || cooldownAfter100 > 3600000) {
     showError('100-download cooldown must be between 1 minute and 1 hour.');
     return;
   }
-  
+
   browser.storage.local.set({
     cooldownMs: cooldownMs,
     cooldownAfter100: cooldownAfter100,
@@ -422,63 +465,63 @@ downloadBtn.addEventListener('click', async () => {
       showError('No active tab found');
       return;
     }
-    
+
     const tab = tabs[0];
     const url = tab.url;
     const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : null;
-    
+
     // Check if we're on a threads page
     if (!url.includes('threads.net') && !url.includes('threads.com')) {
       showError('Please navigate to a Threads page first (threads.net or threads.com)');
       return;
     }
-    
+
     // Check if it's a media page
     if (!url.includes('/media')) {
       const proceed = confirm('This doesn\'t appear to be a media page. Continue anyway?');
       if (!proceed) return;
     }
-    
+
     downloadBtn.disabled = true;
     statusDiv.className = 'status extracting';
     statusDiv.textContent = 'Extracting media from page...';
-    
+
     // Get download limit from select
     const limitValue = downloadLimitSelect.value;
     const limit = limitValue === 'all' ? null : parseInt(limitValue, 10);
-    
+
     // Send message to content script with limit
-    const response = await browser.tabs.sendMessage(tab.id, { 
+    const response = await browser.tabs.sendMessage(tab.id, {
       action: 'extractMedia',
       limit: limit,
       prepareOnly: false,
       usernameOverride: usernameOverride
     });
-    
+
     if (response.success) {
       // Store username for metadata export
       currentUsername = response.username || 'threads-user';
-      
+
       // Check for existing downloads before starting
       statusDiv.textContent = 'Checking for existing downloads...';
-      
+
       const existingCheck = await browser.runtime.sendMessage({
         action: 'checkExistingDownloads',
         username: currentUsername
       });
-      
+
       if (existingCheck.exists) {
         // Found existing downloads - show resume dialog
         statusDiv.className = 'status idle';
         statusDiv.textContent = 'Ready';
-        
+
         // Store media data for resume functionality
         pendingMediaData = {
           mediaItems: response.mediaItems || (response.urls ? response.urls.map(url => ({ url, type: 'image', datetime: null })) : []),
           username: currentUsername,
           metadata: response.metadata || []
         };
-        
+
         showResumeDialog(existingCheck.count, existingCheck.latestDatetime, currentUsername, pendingMediaData);
       } else {
         // No existing downloads - start normal download
@@ -488,7 +531,7 @@ downloadBtn.addEventListener('click', async () => {
         progressText.textContent = `Queued: ${response.count} files`;
         progressBar.style.width = '0%';
         showDownloadingState();
-        
+
         // Start status polling
         startStatusPolling();
       }
@@ -500,7 +543,7 @@ downloadBtn.addEventListener('click', async () => {
       statusDiv.textContent = 'Ready';
       progressDiv.style.display = 'none';
     }
-    
+
   } catch (error) {
     showError(error.message);
     downloadBtn.disabled = false;
@@ -535,7 +578,7 @@ prepareBtn.addEventListener('click', async () => {
     downloadBtn.disabled = true;
     prepareBtn.disabled = true;
 
-    const response = await browser.tabs.sendMessage(tab.id, { 
+    const response = await browser.tabs.sendMessage(tab.id, {
       action: 'extractMedia',
       limit: limit,
       prepareOnly: true,
@@ -637,7 +680,7 @@ stopBtn.addEventListener('click', async () => {
     downloadBtn.disabled = false;
     showStoppedState();
     stopStatusPolling();
-    
+
     setTimeout(() => {
       statusDiv.textContent = 'Ready';
     }, 2000);
@@ -656,7 +699,7 @@ clearBtn.addEventListener('click', async () => {
     downloadBtn.disabled = false;
     showDefaultState();
     stopStatusPolling();
-    
+
     setTimeout(() => {
       statusDiv.textContent = 'Ready';
     }, 2000);
@@ -668,11 +711,11 @@ clearBtn.addEventListener('click', async () => {
 // Status polling
 function startStatusPolling() {
   if (statusInterval) return;
-  
+
   statusInterval = setInterval(async () => {
     try {
       const response = await browser.runtime.sendMessage({ action: 'getStatus' });
-      
+
       if (response.isDownloading) {
         if (response.cooldownUntil > Date.now()) {
           const remaining = Math.ceil((response.cooldownUntil - Date.now()) / 1000);
@@ -682,7 +725,7 @@ function startStatusPolling() {
           statusDiv.className = 'status downloading';
           statusDiv.textContent = 'Downloading...';
         }
-        
+
         // Update progress bar
         if (response.totalFiles > 0) {
           const downloaded = response.downloadCount || 0;
@@ -694,7 +737,7 @@ function startStatusPolling() {
         } else {
           progressText.textContent = 'Processing...';
         }
-        
+
         showDownloadingState();
       } else {
         // Check if there's a saved state for resume
@@ -703,7 +746,7 @@ function startStatusPolling() {
         } else {
           showDefaultState();
         }
-        
+
         if (response.queueLength === 0 && !response.isDownloading) {
           statusDiv.className = 'status idle';
           statusDiv.textContent = 'All downloads complete!';
@@ -711,9 +754,9 @@ function startStatusPolling() {
           downloadBtn.disabled = false;
           showDefaultState();
           stopStatusPolling();
-          
+
           // Metadata is auto-exported, no need to show export button
-          
+
           setTimeout(() => {
             statusDiv.textContent = 'Ready';
           }, 3000);
@@ -751,7 +794,7 @@ browser.runtime.onMessage.addListener((message) => {
     downloadBtn.disabled = false;
     showStoppedState();
     stopStatusPolling();
-    
+
     setTimeout(() => {
       statusDiv.textContent = 'Ready';
     }, 2000);
@@ -767,9 +810,9 @@ browser.runtime.onMessage.addListener((message) => {
     downloadBtn.disabled = false;
     showDefaultState();
     stopStatusPolling();
-    
+
     // Metadata is auto-exported, no need to show export button
-    
+
     setTimeout(() => {
       statusDiv.textContent = 'Ready';
     }, 3000);

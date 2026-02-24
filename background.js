@@ -384,19 +384,27 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
 
-    browser.downloads.download({
-      url: url,
-      filename: `threads-downloads/${username}_metadata.${extension}`,
-      saveAs: false
-    }).then(() => {
-      URL.revokeObjectURL(url);
-      sendResponse({ success: true });
-    }).catch((error) => {
-      URL.revokeObjectURL(url);
-      sendResponse({ success: false, error: error.message });
-    });
+    browser.runtime.getPlatformInfo().then((platformInfo) => {
+      const isAndroid = platformInfo.os === 'android';
+      const filename = `${username}_metadata.${extension}`;
 
-    return true; // Keep channel open for async response
+      const downloadOptions = {
+        url: url,
+        filename: isAndroid ? filename : `threads-downloads/${filename}`
+      };
+
+      if (!isAndroid) {
+        downloadOptions.saveAs = false;
+      }
+
+      browser.downloads.download(downloadOptions).then(() => {
+        URL.revokeObjectURL(url);
+        sendResponse({ success: true });
+      }).catch((error) => {
+        URL.revokeObjectURL(url);
+        sendResponse({ success: false, error: error.message });
+      });
+    });
   } else if (message.action === 'clearQueue') {
     downloadQueue = [];
     shouldStop = true;
@@ -721,15 +729,24 @@ async function processDownloadQueue() {
           const blob = new Blob([content], { type: mimeType });
           const url = URL.createObjectURL(blob);
 
-          // Save in the same directory as images: threads-downloads/<username>/<username>_<date>_metadata.<ext>
-          browser.downloads.download({
-            url: url,
-            filename: `threads-downloads/${username}/${username}_${dateStr}_metadata.${extension}`,
-            saveAs: false
-          }).then(() => {
-            URL.revokeObjectURL(url);
-          }).catch(() => {
-            URL.revokeObjectURL(url);
+          browser.runtime.getPlatformInfo().then((platformInfo) => {
+            const isAndroid = platformInfo.os === 'android';
+            const filename = `${username}_${dateStr}_metadata.${extension}`;
+
+            const downloadOptions = {
+              url: url,
+              filename: isAndroid ? filename : `threads-downloads/${username}/${filename}`
+            };
+
+            if (!isAndroid) {
+              downloadOptions.saveAs = false;
+            }
+
+            browser.downloads.download(downloadOptions).then(() => {
+              URL.revokeObjectURL(url);
+            }).catch(() => {
+              URL.revokeObjectURL(url);
+            });
           });
         }
       }).catch(() => { });
@@ -832,12 +849,22 @@ async function processDownloadQueue() {
     // Download the file
     // Note: For Instagram/Facebook CDN URLs, the original URL with query parameters is required
     try {
-      const downloadId = await browser.downloads.download({
+      // Detect platform to handle Android limitations
+      const platformInfo = await browser.runtime.getPlatformInfo();
+      const isAndroid = platformInfo.os === 'android';
+
+      const downloadOptions = {
         url: item.url,
-        filename: `threads-downloads/${sanitizedUsername}/${filename}`,
-        saveAs: false,
-        // Firefox will automatically include referrer for same-origin requests
-      });
+        // Firefox on Android doesn't support subdirectories
+        filename: isAndroid ? filename : `threads-downloads/${sanitizedUsername}/${filename}`,
+      };
+
+      // saveAs is not supported on Android and throws an error if set to true (or even false in some versions)
+      if (!isAndroid) {
+        downloadOptions.saveAs = false;
+      }
+
+      const downloadId = await browser.downloads.download(downloadOptions);
     } catch (downloadError) {
       // Continue with next item instead of stopping
       setTimeout(() => processDownloadQueue(), 0);
