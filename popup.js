@@ -67,6 +67,8 @@ const closeSettings = document.getElementById('closeSettings');
 const exportMetadataCheckbox = document.getElementById('exportMetadata');
 const metadataFormatGroup = document.getElementById('metadataFormatGroup');
 const redirectSettingSelect = document.getElementById('redirectSetting');
+const singleMediaUrlInput = document.getElementById('singleMediaUrlInput');
+const downloadSingleBtn = document.getElementById('downloadSingleBtn');
 
 // Store current username for metadata export
 let currentUsername = 'threads-user';
@@ -846,3 +848,94 @@ browser.runtime.sendMessage({ action: 'getStatus' }).then((response) => {
 });
 
 // Note: Export metadata button removed - metadata is now auto-exported on download completion
+
+// Single media download button
+if (downloadSingleBtn) {
+  downloadSingleBtn.addEventListener('click', async () => {
+    try {
+      const url = singleMediaUrlInput.value.trim();
+      const username = usernameInput.value.trim() || 'threads-user';
+      
+      if (!url) {
+        showError('Please enter a media URL');
+        return;
+      }
+      
+      // Validate URL format
+      if (!url.startsWith('http')) {
+        showError('Please enter a valid URL starting with http:// or https://');
+        return;
+      }
+      
+      downloadSingleBtn.disabled = true;
+      statusDiv.className = 'status downloading';
+      statusDiv.textContent = 'Downloading single media...';
+      
+      // Try to extract media from the page first (if it's a Threads post URL)
+      if (url.includes('threads.net') || url.includes('threads.com')) {
+        try {
+          // Check if it's a post URL
+          if (url.includes('/post/')) {
+            // We could navigate to the page and extract, but for now use direct download
+            // For simplicity, we'll use direct download
+            const response = await browser.runtime.sendMessage({
+              action: 'downloadSingleMedia',
+              url: url,
+              username: username
+            });
+            
+            if (response.success) {
+              statusDiv.className = 'status idle';
+              statusDiv.textContent = 'Download started!';
+              setTimeout(() => {
+                statusDiv.textContent = 'Ready';
+              }, 2000);
+            } else {
+              showError(response.error || 'Failed to download media');
+            }
+          } else {
+            // Not a post URL, try direct download
+            const response = await browser.runtime.sendMessage({
+              action: 'downloadSingleMedia',
+              url: url,
+              username: username
+            });
+            
+            if (response.success) {
+              statusDiv.className = 'status idle';
+              statusDiv.textContent = 'Download started!';
+              setTimeout(() => {
+                statusDiv.textContent = 'Ready';
+              }, 2000);
+            } else {
+              showError(response.error || 'Failed to download media');
+            }
+          }
+        } catch (error) {
+          showError(error.message);
+        }
+      } else {
+        // Direct media URL download
+        const response = await browser.runtime.sendMessage({
+          action: 'downloadSingleMedia',
+          url: url,
+          username: username
+        });
+        
+        if (response.success) {
+          statusDiv.className = 'status idle';
+          statusDiv.textContent = 'Download started!';
+          setTimeout(() => {
+            statusDiv.textContent = 'Ready';
+          }, 2000);
+        } else {
+          showError(response.error || 'Failed to download media');
+        }
+      }
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      downloadSingleBtn.disabled = false;
+    }
+  });
+}

@@ -140,7 +140,7 @@ Microsoft Edge for Android and iOS has limited extension support. Extensions are
 
 | Version | Changes |
 |---------|---------|
-| 1.2 | Added Edge/Kiwi Browser support documentation |
+| 1.3.2 | Added Edge/Kiwi Browser support documentation |
 | 1.1.3 | Initial Chrome/Edge compatible release |
 
 ## Related Documentation

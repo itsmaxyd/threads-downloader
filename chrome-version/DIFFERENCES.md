@@ -243,7 +243,7 @@ Both versions are actively maintained and receive the same feature updates. Bug 
 ## Version Numbers
 
 Both versions maintain the same version number for feature parity:
-- Current version: 1.1.3
+- Current version: 1.3.2
 - Version numbers will stay synchronized
 
 ## Conclusion

@@ -2,6 +2,25 @@
 
 All notable changes to the Threads Downloader extension will be documented in this file.
 
+## [1.3.2] - 2026-03-03
+
+### Added
+- **Extraction verification system**: Implemented verification to ensure media is fully extracted before download
+- **Duplicate download checking**: Avoids re-downloading existing files by checking for duplicates
+- **Resume functionality**: Enhanced support for resuming interrupted downloads
+- **Metadata appending**: Posts now accumulate rather than overwrite, preserving historical data
+- **Single media download from URL**: Added ability to download individual media files from a URL
+
+### Fixed
+- **Firefox mobile compatibility**: Fixed issues with Firefox for Android browser
+- **Cross-browser API compatibility**: Improved compatibility between Firefox and Chrome APIs
+- **Background handling**: Improved background script handling to avoid partial extraction
+- **Manifest compliance**: Updated manifests to comply with Firefox and Chrome guidelines
+
+### Changed
+- Updated minimum Firefox version to 140.0 (desktop) and 142.0 (Android)
+- Version synchronization between Firefox and Chrome manifests
+
 ## [1.2.0] - 2026-02-23
 
 ### Added

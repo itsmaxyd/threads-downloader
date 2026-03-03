@@ -60,7 +60,7 @@ Install directly from the [Chrome Web Store](https://chromewebstore.google.com/d
    1. The extension should appear in your list of installed extensions
    2. You should see:
       - Extension name: "Threads Media Downloader"
-      - Version: 1.1.3
+      - Version: 1.3.2
       - Status: Enabled
    3. The extension icon should appear in your Chrome toolbar
       - If you don't see it, click the puzzle piece icon (Extensions) in the toolbar
@@ -108,7 +108,7 @@ Install directly from [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox
    1. The extension should appear in the temporary extensions list
    2. You should see:
       - Extension name: "Threads Media Downloader"
-      - Version: 1.1.3
+      - Version: 1.3.2
    3. The extension icon should appear in your Firefox toolbar
 
 > **Note**: Temporary add-ons are removed when Firefox restarts. For permanent installation, use the Firefox Add-ons store.
