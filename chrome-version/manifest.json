@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Threads Media Downloader",
-  "version": "1.3",
+  "version": "1.3.2",
   "description": "Download all media files from Threads user pages with datetime-based filenames",
   "permissions": [
     "downloads",
