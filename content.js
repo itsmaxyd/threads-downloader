@@ -27,7 +27,6 @@ function parseCount(str) {
 
 // Check if current page is a profile page (not media page)
 function isProfilePage() {
-  const url = window.location.href;
   // Match /@username but NOT /@username/media or /@username/post/...
   // Handle query parameters and fragments by checking pathname only
   const pathname = window.location.pathname;
@@ -38,7 +37,6 @@ function isProfilePage() {
 
 // Get the media URL for current profile
 function getMediaUrl() {
-  const url = window.location.href;
   // Convert /@username to /@username/media
   // Preserve query parameters and fragments
   const origin = window.location.origin;
@@ -114,16 +112,12 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 
     // Initial extraction
     extractMediaUrls(mediaContainer, mediaMap);
-    if (mediaMap.size > 0) {
-    }
 
     // Handle infinite scroll to load more media
     await handleInfiniteScroll(mediaContainer, mediaMap, limit);
 
     // Extract metadata from all posts
     postMetadata = extractAllMetadata(mediaContainer, username);
-    if (postMetadata.length > 0) {
-    }
 
     // Convert Map to Array of media objects
     const mediaArray = Array.from(mediaMap.values());
@@ -146,12 +140,8 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
         url.includes('/video/') ||
         url.includes('/media/') ||
         url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
-      if (!isValid) {
-      }
       return isValid;
     });
-    if (validMedia.length > 0) {
-    }
 
     // Remove duplicates while preserving query parameters
     const seen = new Set();
@@ -179,9 +169,6 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
       finalMedia = deduplicatedMedia.slice(0, limit);
     }
 
-    if (finalMedia.length > 0) {
-    }
-
     // If prepareOnly, return URLs without sending to background
     if (prepareOnly) {
       isExtracting = false;
@@ -198,7 +185,7 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
     // Send to background script for downloading
     if (finalMedia.length > 0) {
       try {
-        const bgResponse = await browser.runtime.sendMessage({
+        await browser.runtime.sendMessage({
           action: 'downloadMedia',
           mediaItems: finalMedia, // Send array of objects with metadata
           username: username,
@@ -206,7 +193,6 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
         });
       } catch (err) {
       }
-    } else {
     }
 
     isExtracting = false;
@@ -688,7 +674,6 @@ function extractAllMetadata(container, username) {
 
     if (mediaUrls.length > 0 || postContent) {
       metadataArray.push(metadata);
-    } else {
     }
   });
 

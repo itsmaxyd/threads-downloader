@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     * {
       margin: 0;
@@ -611,45 +612,113 @@
       background: var(--bg-button-secondary-hover);
     }
 
-    /* Error Notification */
+    /* Error Notification Styles */
     .error-notification {
       background: #fee2e2;
       border: 1px solid #ef4444;
       border-radius: 8px;
       padding: 12px;
-      margin: 8px 0;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       gap: 8px;
       color: #991b1b;
+      animation: slideIn 0.3s ease;
+    }
+
+    [data-theme="dark"] .error-notification {
+      background: #450a0a;
+      border-color: #b91c1c;
+      color: #fecaca;
     }
 
     .error-icon {
       font-size: 16px;
+      flex-shrink: 0;
     }
 
     .error-text {
       flex: 1;
       font-size: 13px;
+      line-height: 1.4;
     }
 
     .error-close {
       background: none;
       border: none;
       cursor: pointer;
-      font-size: 16px;
-      color: #991b1b;
+      font-size: 18px;
+      color: inherit;
       padding: 0;
+      line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.2s;
     }
 
-    [data-theme="dark"] .error-notification {
-      background: #3b1111;
-      border-color: #dc2626;
-      color: #fca5a5;
+    .error-close:hover {
+      opacity: 1;
     }
 
-    [data-theme="dark"] .error-close {
-      color: #fca5a5;
+    /* Mobile-specific styles */
+    @media screen and (max-width: 400px) {
+      body {
+        min-width: 280px;
+        padding: 12px;
+        font-size: 14px;
+      }
+
+      .container {
+        padding: 8px;
+      }
+
+      .icon-button {
+        min-height: 80px;
+        font-size: 16px;
+        padding: 12px 16px;
+      }
+
+      .setting-item {
+        margin-bottom: 16px;
+      }
+
+      .setting-input,
+      input[type="number"],
+      select {
+        min-height: 44px;
+        font-size: 16px;
+      }
+
+      .status {
+        font-size: 14px;
+      }
+
+      /* Larger touch targets for checkboxes/radios */
+      input[type="checkbox"],
+      input[type="radio"] {
+        min-width: 24px;
+        min-height: 24px;
+      }
+
+      label {
+        padding: 8px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .settings-panel {
+        max-width: 280px;
+        padding: 16px;
+      }
+
+      .resume-dialog {
+        max-width: 280px;
+        padding: 16px;
+      }
+
+      .info {
+        font-size: 12px;
+      }
     }
   </style>
 </head>
@@ -690,7 +759,17 @@
       <label class="setting-label">Filename prefix (username, optional)</label>
       <input type="text" id="usernameInput" class="setting-input" placeholder="threads-user (optional)">
     </div>
-    
+
+    <!-- Single Media Download Section -->
+    <div class="setting-item">
+      <label class="setting-label">Download Single Media from URL</label>
+      <input type="text" id="singleMediaUrlInput" class="setting-input" placeholder="https://www.threads.net/@username/post/...">
+      <button id="downloadSingleBtn" class="icon-button" style="margin-top: 8px; width: 100%;">
+        <img src="assets/app_icons/dl-media.png" alt="Download Single">
+        <span>Download Single Media</span>
+      </button>
+    </div>
+
     <!-- Main Action Buttons -->
     <div class="button-grid" id="mainButtons">
       <button id="downloadBtn" class="icon-button">

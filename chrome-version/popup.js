@@ -70,6 +70,8 @@ const closeSettings = document.getElementById('closeSettings');
 const exportMetadataCheckbox = document.getElementById('exportMetadata');
 const metadataFormatGroup = document.getElementById('metadataFormatGroup');
 const redirectSettingSelect = document.getElementById('redirectSetting');
+const singleMediaUrlInput = document.getElementById('singleMediaUrlInput');
+const downloadSingleBtn = document.getElementById('downloadSingleBtn');
 
 // Store current username for metadata export
 let currentUsername = 'threads-user';
@@ -864,4 +866,61 @@ chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
     checkProfilePage();
   }
 });
+
+// Single media download button
+if (downloadSingleBtn) {
+  downloadSingleBtn.addEventListener('click', async () => {
+    try {
+      const url = singleMediaUrlInput.value.trim();
+      const username = usernameInput.value.trim() || 'threads-user';
+
+      if (!url) {
+        showError('Please enter a media URL');
+        return;
+      }
+
+      // Validate URL format
+      if (!url.startsWith('http')) {
+        showError('Please enter a valid URL starting with http:// or https://');
+        return;
+      }
+
+      downloadSingleBtn.disabled = true;
+      statusDiv.className = 'status downloading';
+      statusDiv.textContent = 'Downloading single media...';
+
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: 'downloadSingleMedia',
+          url: url,
+          username: username
+        }, (result) => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve(result || { success: false, error: 'No response from background script' });
+        });
+      });
+
+      if (response.success) {
+        statusDiv.className = 'status idle';
+        statusDiv.textContent = 'Download started!';
+        setTimeout(() => {
+          statusDiv.textContent = 'Ready';
+        }, 2000);
+      } else {
+        showError(response.error || 'Failed to download media');
+        statusDiv.className = 'status idle';
+        statusDiv.textContent = 'Ready';
+      }
+    } catch (error) {
+      showError(error.message);
+      statusDiv.className = 'status idle';
+      statusDiv.textContent = 'Ready';
+    } finally {
+      downloadSingleBtn.disabled = false;
+    }
+  });
+}
 

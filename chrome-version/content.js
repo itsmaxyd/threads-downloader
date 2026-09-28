@@ -3,9 +3,31 @@
 
 let isExtracting = false;
 
+// Helper function to parse count strings like "1.2K", "10K", "559"
+function parseCount(str) {
+  if (!str) return 0;
+
+  str = str.trim().toLowerCase();
+
+  // Handle K (thousands)
+  if (str.endsWith('k')) {
+    const num = parseFloat(str.slice(0, -1));
+    return isNaN(num) ? 0 : Math.round(num * 1000);
+  }
+
+  // Handle M (millions)
+  if (str.endsWith('m')) {
+    const num = parseFloat(str.slice(0, -1));
+    return isNaN(num) ? 0 : Math.round(num * 1000000);
+  }
+
+  // Handle plain numbers
+  const num = parseInt(str, 10);
+  return isNaN(num) ? 0 : num;
+}
+
 // Check if current page is a profile page (not media page)
 function isProfilePage() {
-  const url = window.location.href;
   // Match /@username but NOT /@username/media or /@username/post/...
   // Handle query parameters and fragments by checking pathname only
   const pathname = window.location.pathname;
@@ -16,7 +38,6 @@ function isProfilePage() {
 
 // Get the media URL for current profile
 function getMediaUrl() {
-  const url = window.location.href;
   // Convert /@username to /@username/media
   // Preserve query parameters and fragments
   const origin = window.location.origin;
@@ -92,8 +113,6 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
 
     // Initial extraction
     extractMediaUrls(mediaContainer, mediaMap);
-    if (mediaMap.size > 0) {
-    }
 
     // Handle infinite scroll to load more media
     await handleInfiniteScroll(mediaContainer, mediaMap, limit);
@@ -122,12 +141,8 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
         url.includes('/video/') ||
         url.includes('/media/') ||
         url.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)$/i);
-      if (!isValid) {
-      }
       return isValid;
     });
-    if (validMedia.length > 0) {
-    }
 
     // Remove duplicates while preserving query parameters
     const seen = new Set();
@@ -155,9 +170,6 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
       finalMedia = deduplicatedMedia.slice(0, limit);
     }
 
-    if (finalMedia.length > 0) {
-    }
-
     // If prepareOnly, return URLs without sending to background
     if (prepareOnly) {
       isExtracting = false;
@@ -174,7 +186,7 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
     // Send to background script for downloading
     if (finalMedia.length > 0) {
       try {
-        const bgResponse = await chrome.runtime.sendMessage({
+        await chrome.runtime.sendMessage({
           action: 'downloadMedia',
           mediaItems: finalMedia, // Send array of objects with metadata
           username: username,
@@ -182,7 +194,6 @@ async function extractAllMedia(limit = null, prepareOnly = false, usernameOverri
         });
       } catch (err) {
       }
-    } else {
     }
 
     isExtracting = false;
@@ -581,6 +592,87 @@ function extractAllMetadata(container, username) {
       }
     }
 
+    // Extract like and reply counts from the post container
+    let likeCount = 0;
+    let replyCount = 0;
+
+    // Try to find engagement counts in the post container
+    if (postContainer) {
+      // Method 1: Look for specific SVG icons with aria-labels
+      const likeSvg = postContainer.querySelector('svg[aria-label="Like"], svg[aria-label="Liked"]');
+      if (likeSvg) {
+        // Find count in nearby span
+        const parentDiv = likeSvg.closest('div');
+        if (parentDiv) {
+          const spans = parentDiv.querySelectorAll('span');
+          for (const span of spans) {
+            const text = span.textContent.trim();
+            // Handle formats like "559", "1.2K", "10K"
+            if (text && (text.match(/^\d+$/) || text.match(/^\d+\.\d+[KkMm]$/))) {
+              likeCount = parseCount(text);
+              break;
+            }
+          }
+        }
+      }
+
+      const replySvg = postContainer.querySelector('svg[aria-label="Reply"]');
+      if (replySvg) {
+        const parentDiv = replySvg.closest('div');
+        if (parentDiv) {
+          const spans = parentDiv.querySelectorAll('span');
+          for (const span of spans) {
+            const text = span.textContent.trim();
+            if (text && (text.match(/^\d+$/) || text.match(/^\d+\.\d+[KkMm]$/))) {
+              replyCount = parseCount(text);
+              break;
+            }
+          }
+        }
+      }
+
+      // Method 2: Look for elements with specific roles or data attributes
+      // Threads uses specific button structures for engagement
+      const buttons = postContainer.querySelectorAll('button, [role="button"]');
+      for (const btn of buttons) {
+        const ariaLabel = btn.getAttribute('aria-label') || '';
+        const text = btn.textContent.trim();
+
+        if (ariaLabel.toLowerCase().includes('like') && text) {
+          const countMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*(likes?)?$/i);
+          if (countMatch && likeCount === 0) {
+            likeCount = parseCount(countMatch[1]);
+          }
+        }
+
+        if (ariaLabel.toLowerCase().includes('repl') && text) {
+          const countMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*(replies?)?$/i);
+          if (countMatch && replyCount === 0) {
+            replyCount = parseCount(countMatch[1]);
+          }
+        }
+      }
+
+      // Method 3: Look for common engagement count patterns
+      // Engagement counts often appear in specific span structures
+      const allSpans = postContainer.querySelectorAll('span');
+      for (const span of allSpans) {
+        const text = span.textContent.trim();
+        // Look for patterns like "559 likes" or "12 replies"
+        if (text && text.length < 50) {
+          const likeMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*likes?$/i);
+          if (likeMatch && likeCount === 0) {
+            likeCount = parseCount(likeMatch[1]);
+          }
+
+          const replyMatch = text.match(/^(\d+|\d+\.\d+[KkMm])\s*replies?$/i);
+          if (replyMatch && replyCount === 0) {
+            replyCount = parseCount(replyMatch[1]);
+          }
+        }
+      }
+    }
+
     const metadata = {
       username: username,
       datetime_iso: datetime,
@@ -588,8 +680,8 @@ function extractAllMetadata(container, username) {
       post_permalink: permalink,
       media_urls: mediaUrls,
       post_content: postContent,
-      like_count: 0, // Would need different extraction method
-      reply_count: 0  // Would need different extraction method
+      like_count: likeCount,
+      reply_count: replyCount
     };
 
     if (mediaUrls.length > 0 || postContent) {
