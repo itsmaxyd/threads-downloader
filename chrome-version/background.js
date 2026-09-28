@@ -23,7 +23,6 @@ let lastDownloadTime = 0;
 let cooldownUntil = 0;
 let totalFiles = 0;
 let savedState = null; // For resume functionality
-let activeDownloadId = null; // Track current download
 let lastCooldownMilestone = 0; // Track last milestone where cooldown was applied (100, 200, etc.)
 let usedDatetimes = new Map(); // Track used datetimes per username for collision handling
 let postMetadata = []; // Store metadata for export
@@ -148,12 +147,7 @@ function isValidMediaUrl(url) {
       pathname.includes('/media/');
 
     // Accept if: has extension, has media path, or is CDN URL with query params
-    const isValid = hasValidExtension || hasMediaPath || hasQueryParams;
-
-    if (!isValid) {
-    }
-
-    return isValid;
+    return Boolean(hasValidExtension || hasMediaPath || hasQueryParams);
   } catch (e) {
     return false;
   }
@@ -176,7 +170,7 @@ async function checkExistingFiles(username, totalFiles) {
   try {
     // Get default download directory
     const downloads = await chrome.downloads.search({
-      query: username,
+      query: [username],
       orderBy: ['-startTime']
     });
 
@@ -206,7 +200,7 @@ async function checkExistingDownloads(username) {
   try {
     // Search for downloads with the username in the path
     const downloads = await chrome.downloads.search({
-      query: `threads-downloads/${username}`,
+      query: [`threads-downloads/${username}`],
       exists: true
     });
 
@@ -286,6 +280,50 @@ function filterNewerMedia(mediaItems, cutoffDatetime) {
   });
 }
 
+// Determine a download file extension from a media URL
+function detectExtensionFromUrl(url) {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    if (pathname.includes('.mp4') || pathname.includes('video')) return 'mp4';
+    if (pathname.includes('.webp')) return 'webp';
+    if (pathname.includes('.png')) return 'png';
+    if (pathname.includes('.gif')) return 'gif';
+    if (pathname.includes('.jpeg')) return 'jpeg';
+    if (pathname.includes('.jpg')) return 'jpg';
+  } catch (e) {
+    // Fall through to default
+  }
+  return 'jpg';
+}
+
+// Build a unique filename for a queue item, handling datetime collisions
+function buildQueueFilename(item, extension) {
+  const sanitizedUsername = sanitizeFilename(item.username);
+  const formattedDatetime = formatDatetime(item.datetime);
+
+  if (!formattedDatetime) {
+    const paddedIndex = String(item.index).padStart(String(item.total).length, '0');
+    return `${sanitizedUsername}_${paddedIndex}_of_${item.total}.${extension}`;
+  }
+
+  if (!usedDatetimes.has(sanitizedUsername)) {
+    usedDatetimes.set(sanitizedUsername, new Set());
+  }
+  const userDatetimes = usedDatetimes.get(sanitizedUsername);
+
+  if (!userDatetimes.has(formattedDatetime)) {
+    userDatetimes.add(formattedDatetime);
+    return `${sanitizedUsername}_${formattedDatetime}.${extension}`;
+  }
+
+  let suffix = 1;
+  while (userDatetimes.has(`${formattedDatetime}_${suffix}`)) {
+    suffix++;
+  }
+  userDatetimes.add(`${formattedDatetime}_${suffix}`);
+  return `${sanitizedUsername}_${formattedDatetime}_${suffix}.${extension}`;
+}
+
 // Listen for media URLs from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'downloadMedia') {
@@ -309,18 +347,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Validate and filter media items
     const validItems = [];
-    const invalidItems = [];
 
     mediaItems.forEach(item => {
       if (isValidMediaUrl(item.url)) {
         validItems.push(item);
-      } else {
-        invalidItems.push(item.url);
       }
     });
-
-    if (invalidItems.length > 0 && invalidItems.length <= 5) {
-    }
 
     if (validItems.length === 0) {
       sendResponse({ success: false, error: 'No valid media URLs found. Check console for details.' });
@@ -364,7 +396,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Start processing if not already downloading
     if (!isDownloading) {
       processDownloadQueue();
-    } else {
     }
 
     sendResponse({ success: true, queued: downloadQueue.length, skipped: 0 });
@@ -514,7 +545,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Start processing if not already downloading
     if (!isDownloading) {
       processDownloadQueue();
-    } else {
     }
 
     sendResponse({ success: true, queued: downloadQueue.length });
@@ -631,18 +661,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Validate and filter media items
     const validItems = [];
-    const invalidItems = [];
 
     mediaItems.forEach(item => {
       if (isValidMediaUrl(item.url)) {
         validItems.push(item);
-      } else {
-        invalidItems.push(item.url);
       }
     });
-
-    if (invalidItems.length > 0 && invalidItems.length <= 5) {
-    }
 
     if (validItems.length === 0) {
       sendResponse({ success: false, error: 'No valid media URLs found. Check console for details.' });
@@ -686,10 +710,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Start processing if not already downloading
     if (!isDownloading) {
       processDownloadQueue();
-    } else {
     }
 
     sendResponse({ success: true, queued: downloadQueue.length, skipped: 0 });
+
+    return true; // Keep channel open for async response
+  } else if (message.action === 'downloadSingleMedia') {
+    const url = typeof message.url === 'string' ? message.url.trim() : '';
+    const username = sanitizeFilename(message.username || 'threads-user');
+
+    if (!url) {
+      sendResponse({ success: false, error: 'No media URL provided' });
+      return true;
+    }
+
+    if (!isValidMediaUrl(url)) {
+      sendResponse({ success: false, error: 'URL is not a supported Threads/Instagram CDN media URL' });
+      return true;
+    }
+
+    (async () => {
+      try {
+        const extension = detectExtensionFromUrl(url);
+        const filename = `${username}_single_${Date.now()}.${extension}`;
+        await chrome.downloads.download({
+          url: url,
+          filename: `threads-downloads/${username}/${filename}`,
+          saveAs: false
+        });
+        sendResponse({ success: true });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message || 'Download failed' });
+      }
+    })();
 
     return true; // Keep channel open for async response
   }
@@ -795,54 +848,9 @@ async function processDownloadQueue() {
       await new Promise(resolve => setTimeout(resolve, settings.cooldownMs - timeSinceLastDownload));
     }
 
-    // Determine file extension from URL
-    const urlObj = new URL(item.url);
-    let extension = 'jpg';
-    const pathname = urlObj.pathname.toLowerCase();
-
-    if (pathname.includes('.mp4') || pathname.includes('video')) {
-      extension = 'mp4';
-    } else if (pathname.includes('.webp')) {
-      extension = 'webp';
-    } else if (pathname.includes('.png')) {
-      extension = 'png';
-    } else if (pathname.includes('.gif')) {
-      extension = 'gif';
-    } else if (pathname.includes('.jpeg')) {
-      extension = 'jpeg';
-    } else if (pathname.includes('.jpg')) {
-      extension = 'jpg';
-    }
-
+    const extension = detectExtensionFromUrl(item.url);
     const sanitizedUsername = sanitizeFilename(item.username);
-    let filename;
-
-    // Try to use datetime-based filename
-    const formattedDatetime = formatDatetime(item.datetime);
-    if (formattedDatetime) {
-      // Check for datetime collision
-      if (!usedDatetimes.has(sanitizedUsername)) {
-        usedDatetimes.set(sanitizedUsername, new Set());
-      }
-      const userDatetimes = usedDatetimes.get(sanitizedUsername);
-
-      if (userDatetimes.has(formattedDatetime)) {
-        // Collision detected - find next available suffix
-        let suffix = 1;
-        while (userDatetimes.has(`${formattedDatetime}_${suffix}`)) {
-          suffix++;
-        }
-        filename = `${sanitizedUsername}_${formattedDatetime}_${suffix}.${extension}`;
-        userDatetimes.add(`${formattedDatetime}_${suffix}`);
-      } else {
-        filename = `${sanitizedUsername}_${formattedDatetime}.${extension}`;
-        userDatetimes.add(formattedDatetime);
-      }
-    } else {
-      // Fallback to index-based naming when no datetime available
-      const paddedIndex = String(item.index).padStart(String(item.total).length, '0');
-      filename = `${sanitizedUsername}_${paddedIndex}_of_${item.total}.${extension}`;
-    }
+    const filename = buildQueueFilename(item, extension);
 
     // Validate URL one more time before downloading
     if (!isValidMediaUrl(item.url)) {

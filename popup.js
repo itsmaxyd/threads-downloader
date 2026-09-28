@@ -870,67 +870,23 @@ if (downloadSingleBtn) {
       downloadSingleBtn.disabled = true;
       statusDiv.className = 'status downloading';
       statusDiv.textContent = 'Downloading single media...';
-      
-      // Try to extract media from the page first (if it's a Threads post URL)
-      if (url.includes('threads.net') || url.includes('threads.com')) {
-        try {
-          // Check if it's a post URL
-          if (url.includes('/post/')) {
-            // We could navigate to the page and extract, but for now use direct download
-            // For simplicity, we'll use direct download
-            const response = await browser.runtime.sendMessage({
-              action: 'downloadSingleMedia',
-              url: url,
-              username: username
-            });
-            
-            if (response.success) {
-              statusDiv.className = 'status idle';
-              statusDiv.textContent = 'Download started!';
-              setTimeout(() => {
-                statusDiv.textContent = 'Ready';
-              }, 2000);
-            } else {
-              showError(response.error || 'Failed to download media');
-            }
-          } else {
-            // Not a post URL, try direct download
-            const response = await browser.runtime.sendMessage({
-              action: 'downloadSingleMedia',
-              url: url,
-              username: username
-            });
-            
-            if (response.success) {
-              statusDiv.className = 'status idle';
-              statusDiv.textContent = 'Download started!';
-              setTimeout(() => {
-                statusDiv.textContent = 'Ready';
-              }, 2000);
-            } else {
-              showError(response.error || 'Failed to download media');
-            }
-          }
-        } catch (error) {
-          showError(error.message);
-        }
+
+      const response = await browser.runtime.sendMessage({
+        action: 'downloadSingleMedia',
+        url: url,
+        username: username
+      });
+
+      if (response.success) {
+        statusDiv.className = 'status idle';
+        statusDiv.textContent = 'Download started!';
+        setTimeout(() => {
+          statusDiv.textContent = 'Ready';
+        }, 2000);
       } else {
-        // Direct media URL download
-        const response = await browser.runtime.sendMessage({
-          action: 'downloadSingleMedia',
-          url: url,
-          username: username
-        });
-        
-        if (response.success) {
-          statusDiv.className = 'status idle';
-          statusDiv.textContent = 'Download started!';
-          setTimeout(() => {
-            statusDiv.textContent = 'Ready';
-          }, 2000);
-        } else {
-          showError(response.error || 'Failed to download media');
-        }
+        showError(response.error || 'Failed to download media');
+        statusDiv.className = 'status idle';
+        statusDiv.textContent = 'Ready';
       }
     } catch (error) {
       showError(error.message);
