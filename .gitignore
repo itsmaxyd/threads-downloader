@@ -8,3 +8,7 @@ docs/media/screenshots/promo_video.mp4
 plans/
 *.zip
 *.crx
+# CRX signing keys — NEVER commit these
+*.pem
+privatekey.pem
+key.pem
