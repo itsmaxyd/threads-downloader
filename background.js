@@ -1,5 +1,13 @@
 // Background script for managing downloads with rate limiting
 
+// Cross-browser shim: `browser.*` on Firefox, `chrome.*` on Chromium.
+// (Firefox root file defines it outright; chrome-version/ prepends the same
+// header. Tests inject matching aliases via harness.js.)
+const extBg = (typeof browser !== 'undefined' && browser && browser.runtime) ? browser.runtime : chrome.runtime;
+const extBgStorage = (typeof browser !== 'undefined' && browser && browser.storage) ? browser.storage : chrome.storage;
+const extBgDownloads = (typeof browser !== 'undefined' && browser && browser.downloads) ? browser.downloads : chrome.downloads;
+const extBgTabs = (typeof browser !== 'undefined' && browser && browser.tabs) ? browser.tabs : chrome.tabs;
+
 let downloadQueue = [];
 let isDownloading = false;
 let shouldStop = false;
@@ -38,7 +46,7 @@ function formatDatetime(isoString) {
 
 // Convert metadata array to CSV format
 function convertToCSV(metadata) {
-  const headers = ['username', 'datetime_iso', 'datetime_display', 'post_permalink', 'media_urls', 'post_content', 'like_count', 'reply_count'];
+  const headers = ['username', 'author', 'datetime_iso', 'datetime_display', 'post_permalink', 'media_urls', 'post_content', 'like_count', 'reply_count', 'source_tab', 'is_reply'];
 
   const rows = metadata.map(item => {
     return headers.map(h => {
@@ -65,7 +73,7 @@ function convertToCSV(metadata) {
 }
 
 // Load settings from storage
-browser.storage.local.get(['cooldownMs', 'cooldownAfter100']).then((result) => {
+extBgStorage.local.get(['cooldownMs', 'cooldownAfter100']).then((result) => {
   if (result.cooldownMs !== undefined) {
     settings.cooldownMs = result.cooldownMs;
   }
@@ -75,14 +83,14 @@ browser.storage.local.get(['cooldownMs', 'cooldownAfter100']).then((result) => {
 });
 
 // Check for saved download state on startup (for resume)
-browser.storage.local.get(['downloadState']).then((result) => {
+extBgStorage.local.get(['downloadState']).then((result) => {
   if (result.downloadState && result.downloadState.queue && result.downloadState.queue.length > 0) {
     savedState = result.downloadState;
   }
 }).catch(() => { });
 
 // Listen for settings updates
-browser.storage.onChanged.addListener((changes) => {
+extBgStorage.onChanged.addListener((changes) => {
   if (changes.cooldownMs) {
     settings.cooldownMs = changes.cooldownMs.newValue;
   }
@@ -104,7 +112,9 @@ function isValidMediaUrl(url) {
       return false;
     }
 
-    // Allow specific CDN domains for security
+    // Allow specific CDN domains for security.
+    // lookaside = threads.com redirector used by newer web delivery;
+    // updated 2025-2026 after the threads.net -> threads.com migration.
     const hostname = urlObj.hostname.toLowerCase();
 
     // Check for known CDN patterns in hostname
@@ -112,7 +122,8 @@ function isValidMediaUrl(url) {
       hostname.includes('scontent') ||
       hostname.includes('cdninstagram') ||
       hostname.includes('instagram') ||
-      hostname.includes('threads');
+      hostname.includes('threads') ||
+      hostname.includes('lookaside');
 
     if (!isCDN) {
       return false;
@@ -122,12 +133,17 @@ function isValidMediaUrl(url) {
     const hasQueryParams = urlObj.search.length > 0;
     const pathname = urlObj.pathname.toLowerCase();
 
-    // Check for valid media indicators
-    const hasValidExtension = pathname.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|avi)(\?|$)/i);
+    // Check for valid media indicators.
+    // Threads stores uploads as HEIC and the CDN converts on delivery
+    // (URLs may end in .heic while the bytes are JPEG); AVIF + HLS (m3u8)
+    // appear in newer delivery, so accept both here and resolve the real
+    // extension at download time where possible.
+    const hasValidExtension = pathname.match(/\.(jpg|jpeg|png|webp|gif|heic|heif|avif|mp4|m4v|mov|webm|m3u8)(\?|$)/i);
     const hasMediaPath = pathname.includes('/v/t51.') ||  // Instagram CDN path
       pathname.includes('/image/') ||
       pathname.includes('/video/') ||
-      pathname.includes('/media/');
+      pathname.includes('/media/') ||
+      pathname.includes('videoplayback');
 
     // Accept if: has extension, has media path, or is CDN URL with query params
     return Boolean(hasValidExtension || hasMediaPath || hasQueryParams);
@@ -152,7 +168,7 @@ async function checkExistingFiles(username, totalFiles) {
 
   try {
     // Get default download directory
-    const downloads = await browser.downloads.search({
+    const downloads = await extBgDownloads.search({
       query: [username],
       orderBy: ['-startTime']
     });
@@ -179,24 +195,32 @@ async function checkExistingFiles(username, totalFiles) {
   return existingFiles;
 }
 
-// Check for existing downloads in the user's folder (for resume functionality)
-async function checkExistingDownloads(username) {
+// Check for existing downloads in the user's folder (for resume functionality).
+// `sourceTab` scopes the check: 'media' matches legacy files (no marker) plus
+// explicit media files; 'replies' matches only `_reply` files. Desktop uses
+// `threads-downloads/<user>/` paths, Android uses flat `threads-<user>-` names;
+// a single downloads.search call covers both (GeckoView supports one query).
+async function checkExistingDownloads(username, sourceTab) {
+  const tab = normalizeSourceTab(sourceTab, 'media');
   try {
-    // Search for downloads with the username in the path
-    const downloads = await browser.downloads.search({
-      query: [`threads-downloads/${username}`],
-      exists: true
+    const downloads = await extBgDownloads.search({
+      query: [`threads-${username}`],
+      orderBy: ['-startTime'],
+      limit: 5000
     });
 
-    // Filter to only include files in the correct folder
-    const filtered = downloads.filter(download => {
-      if (!download.filename) return false;
-      // Check if the file is in threads-downloads/{username}/ folder
-      const pathPattern = new RegExp(`threads-downloads[/\\\\]${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[/\\\\]`);
-      return pathPattern.test(download.filename);
-    });
+    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const desktopRe = new RegExp(`threads-downloads[/\\\\]${escaped}[/\\\\]`);
+    const androidRe = new RegExp(`threads-${escaped}-`);
+    const isReplyFile = (name) => /_reply(?:_|\.)/i.test(name.split(/[/\\]/).pop());
 
-    return filtered;
+    return downloads.filter(download => {
+      if (!download || !download.filename) return false;
+      const name = download.filename;
+      if (!desktopRe.test(name) && !androidRe.test(name)) return false;
+      const reply = isReplyFile(name);
+      return tab === 'replies' ? reply : !reply;
+    });
   } catch (error) {
     return [];
   }
@@ -264,30 +288,92 @@ function filterNewerMedia(mediaItems, cutoffDatetime) {
   });
 }
 
-// Determine a download file extension from a media URL
-function detectExtensionFromUrl(url) {
+// Determine a download file extension from a media URL.
+// `type` hint (image/video from the content script) disambiguates CDN
+// URLs whose path mentions "video" only because they are video posters.
+// Unknown type (queue files, single-URL downloads) trusts real extensions.
+function detectExtensionFromUrl(url, type) {
+  const t = (type === 'video') ? 'video' : ((type === 'image') ? 'image' : 'unknown');
   try {
     const pathname = new URL(url).pathname.toLowerCase();
-    if (pathname.includes('.mp4') || pathname.includes('video')) return 'mp4';
-    if (pathname.includes('.webp')) return 'webp';
-    if (pathname.includes('.png')) return 'png';
-    if (pathname.includes('.gif')) return 'gif';
-    if (pathname.includes('.jpeg')) return 'jpeg';
-    if (pathname.includes('.jpg')) return 'jpg';
+    const has = (ext) => pathname.includes(ext);
+    if (t === 'video') {
+      if (has('.mp4') || has('.m4v')) return 'mp4';
+      if (has('.mov')) return 'mov';
+      if (has('.webm')) return 'webm';
+      if (has('.m3u8')) return 'mp4';
+      if (pathname.includes('video') || pathname.includes('videoplayback')) return 'mp4';
+      return 'mp4';
+    }
+    if (has('.png')) return 'png';
+    if (has('.webp')) return 'webp';
+    if (has('.gif')) return 'gif';
+    if (has('.avif')) return 'avif';
+    if (has('.jpeg')) return 'jpeg';
+    if (has('.jpg')) return 'jpg';
+    // HEIC URLs deliver converted JPEG bytes over the wire.
+    if (has('.heic') || has('.heif')) return 'jpg';
+    if (t === 'image') return 'jpg';
+    // Unknown type: trust real video extensions/paths, else fall back to jpg.
+    if (has('.mp4') || has('.m4v')) return 'mp4';
+    if (has('.mov')) return 'mov';
+    if (has('.webm')) return 'webm';
+    if (has('.m3u8')) return 'mp4';
+    if (pathname.includes('videoplayback')) return 'mp4';
   } catch (e) {
     // Fall through to default
   }
-  return 'jpg';
+  // Query-param style CDN delivery (no extension in path): trust the type.
+  return t === 'video' ? 'mp4' : 'jpg';
 }
 
-// Build a unique filename for a queue item, handling datetime collisions
+// Derive page info from a tab URL alone (fallback when the content script
+// can't be reached — Firefox Android drops registrations on process death).
+function pageInfoFromUrl(tabUrl) {
+  try {
+    const u = new URL(tabUrl);
+    const hostOk = /threads\.(com|net)$/.test(u.hostname.replace(/^www\./, ''));
+    if (!hostOk) return { isProfilePage: false };
+    const m = u.pathname.match(/\/@([^/ ?#]+)/);
+    const username = m ? decodeURIComponent(m[1]) : null;
+    const clean = u.pathname.split(/[?#]/)[0].replace(/\/+$/, '') || '/';
+    let kind = 'other';
+    if (/^\/@[^/]+$/.test(clean)) kind = 'profile';
+    else if (/^\/@[^/]+\/media$/.test(clean)) kind = 'media';
+    else if (/^\/@[^/]+\/replies$/.test(clean)) kind = 'replies';
+    else if (/^\/@[^/]+\/reposts$/.test(clean)) kind = 'reposts';
+    else if (clean.includes('/post/')) kind = 'post';
+    const base = `https://www.threads.com/${username ? `@${username}/` : ''}`;
+    return {
+      isProfilePage: kind === 'profile',
+      kind,
+      username,
+      mediaUrl: username ? `${base}media` : null,
+      repliesUrl: username ? `${base}replies` : null
+    };
+  } catch (e) {
+    return { isProfilePage: false };
+  }
+}
+
+// Normalize an item's source tab for filenames/metadata.
+function normalizeSourceTab(value, fallback) {
+  const v = String(value || fallback || 'media').toLowerCase();
+  if (v === 'replies' || v === 'media' || v === 'reposts' || v === 'profile' || v === 'post') return v;
+  return String(fallback || 'media').toLowerCase();
+}
+
+// Build a unique filename for a queue item, handling datetime collisions.
+// Replies-tab items get a `_reply` marker so media + replies for the same
+// account never collide and stay distinguishable in one folder.
 function buildQueueFilename(item, extension) {
   const sanitizedUsername = sanitizeFilename(item.username);
   const formattedDatetime = formatDatetime(item.datetime);
+  const sourceTag = normalizeSourceTab(item.source_tab, null) === 'replies' ? '_reply' : '';
 
   if (!formattedDatetime) {
     const paddedIndex = String(item.index).padStart(String(item.total).length, '0');
-    return `${sanitizedUsername}_${paddedIndex}_of_${item.total}.${extension}`;
+    return `${sanitizedUsername}${sourceTag}_${paddedIndex}_of_${item.total}.${extension}`;
   }
 
   if (!usedDatetimes.has(sanitizedUsername)) {
@@ -295,21 +381,92 @@ function buildQueueFilename(item, extension) {
   }
   const userDatetimes = usedDatetimes.get(sanitizedUsername);
 
-  if (!userDatetimes.has(formattedDatetime)) {
-    userDatetimes.add(formattedDatetime);
-    return `${sanitizedUsername}_${formattedDatetime}.${extension}`;
+  if (!userDatetimes.has(formattedDatetime + sourceTag)) {
+    userDatetimes.add(formattedDatetime + sourceTag);
+    return `${sanitizedUsername}_${formattedDatetime}${sourceTag}.${extension}`;
   }
 
   let suffix = 1;
-  while (userDatetimes.has(`${formattedDatetime}_${suffix}`)) {
+  while (userDatetimes.has(`${formattedDatetime}${sourceTag}_${suffix}`)) {
     suffix++;
   }
-  userDatetimes.add(`${formattedDatetime}_${suffix}`);
-  return `${sanitizedUsername}_${formattedDatetime}_${suffix}.${extension}`;
+  userDatetimes.add(`${formattedDatetime}${sourceTag}_${suffix}`);
+  return `${sanitizedUsername}_${formattedDatetime}${sourceTag}_${suffix}.${extension}`;
+}
+
+// ---------------------------------------------------------------------------
+// Platform-aware download options (desktop + Firefox Android).
+// Firefox for Android (GeckoView): no `saveAs` support, no subdirectory
+// filenames, no conflictAction/headers in some builds — probe capabilities
+// once and fall back so the queue never dies on Android-only errors.
+// ---------------------------------------------------------------------------
+let platformInfoCache = null;
+let downloadsCapsCache = null;
+
+async function getPlatformInfoCached() {
+  if (platformInfoCache) return platformInfoCache;
+  try {
+    platformInfoCache = await extBg.getPlatformInfo();
+  } catch (e) {
+    platformInfoCache = { os: 'unknown' };
+  }
+  return platformInfoCache;
+}
+
+async function getDownloadsCaps() {
+  if (downloadsCapsCache) return downloadsCapsCache;
+  const caps = { saveAs: true, subdir: true };
+  try {
+    if (typeof extBgDownloads.setShelfEnabled === 'function') {
+      // Desktop-only API surface exists; Android lacks subdirectory + saveAs.
+      const info = await getPlatformInfoCached();
+      if (info && info.os === 'android') {
+        caps.saveAs = false;
+        caps.subdir = false;
+      }
+    } else {
+      const info = await getPlatformInfoCached();
+      if (info && info.os === 'android') {
+        caps.saveAs = false;
+        caps.subdir = false;
+      }
+    }
+  } catch (e) {
+    try {
+      const info = await getPlatformInfoCached();
+      if (info && info.os === 'android') {
+        caps.saveAs = false;
+        caps.subdir = false;
+      }
+    } catch (e2) { /* keep desktop defaults */ }
+  }
+  downloadsCapsCache = caps;
+  return caps;
+}
+
+function buildFilenameForPlatform({ usernameDir, filename }, caps) {
+  if (caps && caps.subdir === false) {
+    // Flat namespace on Android: prefix the user dir into the basename.
+    const safeDir = String(usernameDir || 'threads-user').replace(/[\\/]+/g, '_');
+    return `threads-${safeDir}-${filename}`;
+  }
+  return `threads-downloads/${usernameDir}/${filename}`;
+}
+
+async function buildDownloadOptions({ url, usernameDir, filename }) {
+  const caps = await getDownloadsCaps();
+  const options = {
+    url,
+    filename: buildFilenameForPlatform({ usernameDir, filename }, caps)
+  };
+  if (caps.saveAs) {
+    options.saveAs = false;
+  }
+  return options;
 }
 
 // Listen for media URLs from content script
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+extBg.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'downloadMedia') {
 
     // Reset state for a fresh run
@@ -324,6 +481,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Support both new mediaItems format and legacy urls format
     const mediaItems = message.mediaItems || (message.urls ? message.urls.map(url => ({ url, type: 'image', datetime: null })) : []);
     let username = message.username || 'threads-user';
+    const requestTab = normalizeSourceTab(message.source_tab, 'media');
 
 
     // Sanitize username to prevent path traversal
@@ -349,7 +507,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       postMetadata = message.metadata;
     }
 
-    // Add to download queue
+    // Add to download queue (carry source_tab through for filenames/resume)
     totalFiles = validItems.length;
     validItems.forEach((item, index) => {
       downloadQueue.push({
@@ -358,19 +516,20 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         index: index + 1,
         total: validItems.length,
         type: item.type || 'image',
-        datetime: item.datetime || null
+        datetime: item.datetime || null,
+        source_tab: normalizeSourceTab(item.source_tab, requestTab)
       });
     });
 
     // Save state for resume functionality
     savedState = {
-      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime })),
+      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime, source_tab: item.source_tab })),
       totalFiles: totalFiles,
       downloadCount: downloadCount,
       username: username,
       metadata: postMetadata
     };
-    browser.storage.local.set({ downloadState: savedState }).catch(() => { });
+    extBgStorage.local.set({ downloadState: savedState }).catch(() => { });
 
     // Reset stop flag and cooldown milestone when starting new download
     shouldStop = false;
@@ -414,27 +573,27 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
 
-    browser.runtime.getPlatformInfo().then((platformInfo) => {
-      const isAndroid = platformInfo.os === 'android';
+    (async () => {
+      // Manual metadata export has no per-user folder: pass the filename
+      // through as the basename so Android flattening keeps it intact.
       const filename = `${username}_metadata.${extension}`;
-
-      const downloadOptions = {
-        url: url,
-        filename: isAndroid ? filename : `threads-downloads/${filename}`
-      };
-
-      if (!isAndroid) {
-        downloadOptions.saveAs = false;
-      }
-
-      browser.downloads.download(downloadOptions).then(() => {
+      try {
+        const downloadOptions = await buildDownloadOptions({
+          url,
+          usernameDir: '.',
+          filename
+        });
+        // buildDownloadOptions prefixes threads-downloads/. — strip it back
+        // to the bare filename for folder-less manual exports.
+        downloadOptions.filename = filename;
+        await extBgDownloads.download(downloadOptions);
         URL.revokeObjectURL(url);
         sendResponse({ success: true });
-      }).catch((error) => {
+      } catch (error) {
         URL.revokeObjectURL(url);
         sendResponse({ success: false, error: error.message });
-      });
-    });
+      }
+    })();
   } else if (message.action === 'clearQueue') {
     downloadQueue = [];
     shouldStop = true;
@@ -445,7 +604,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     usedDatetimes = new Map(); // Reset datetime collision tracking
     postMetadata = []; // Reset metadata
     savedState = null;
-    browser.storage.local.remove(['downloadState']).catch(() => { });
+    extBgStorage.local.remove(['downloadState']).catch(() => { });
     sendResponse({ success: true });
     return true;
   } else if (message.action === 'stopDownload') {
@@ -455,7 +614,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   } else if (message.action === 'resumeDownload') {
     // Load saved state and resume
-    browser.storage.local.get(['downloadState']).then((result) => {
+    extBgStorage.local.get(['downloadState']).then((result) => {
       if (result.downloadState) {
         savedState = result.downloadState;
         downloadQueue = savedState.queue.map(item => ({
@@ -464,7 +623,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
           index: item.index,
           total: item.total,
           type: item.type || 'image',
-          datetime: item.datetime || null
+          datetime: item.datetime || null,
+          source_tab: normalizeSourceTab(item.source_tab, 'media')
         }));
         totalFiles = savedState.totalFiles;
         downloadCount = savedState.downloadCount || 0;
@@ -493,6 +653,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     lastCooldownMilestone = 0;
     usedDatetimes = new Map(); // Reset datetime collision tracking
     postMetadata = []; // Reset metadata (no metadata when loading from file)
+    const sourceTab = normalizeSourceTab(message.source_tab, 'media'); // forward source for filenames/export
 
     const mediaUrls = message.urls || [];
     let username = message.username || 'threads-user';
@@ -518,18 +679,20 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         index: index + 1,
         total: validUrls.length,
         type: 'image',
-        datetime: null
+        datetime: null,
+        source_tab: sourceTab
       });
     });
 
     // Save state for resume functionality
     savedState = {
-      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime })),
+      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime, source_tab: item.source_tab })),
       totalFiles: totalFiles,
       downloadCount: downloadCount,
-      username: username
+      username: username,
+      metadata: postMetadata
     };
-    browser.storage.local.set({ downloadState: savedState }).catch(() => { });
+    extBgStorage.local.set({ downloadState: savedState }).catch(() => { });
 
     // Reset stop flag and cooldown milestone when starting new download
     shouldStop = false;
@@ -544,7 +707,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   } else if (message.action === 'getStatus') {
     // Check if there's a saved state for resume
-    browser.storage.local.get(['downloadState']).then((result) => {
+    extBgStorage.local.get(['downloadState']).then((result) => {
       const hasSavedState = result.downloadState && result.downloadState.queue && result.downloadState.queue.length > 0;
       sendResponse({
         isDownloading: isDownloading,
@@ -566,18 +729,56 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true; // Keep channel open for async
   } else if (message.action === 'checkProfilePage') {
-    // Query the active tab to check if it's a profile page
+    // Query the active tab and return full page info (kind/urls/username).
+    // Falls back to URL parsing when the content script is unreachable
+    // (common on Firefox Android after process restarts).
     (async () => {
       try {
-        const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-        if (tabs[0]) {
-          const response = await browser.tabs.sendMessage(tabs[0].id, { action: 'checkProfilePage' });
-          sendResponse(response);
-        } else {
+        const tabs = await extBgTabs.query({ active: true, currentWindow: true });
+        const tab = tabs[0];
+        if (!tab) {
           sendResponse({ isProfilePage: false });
+          return;
+        }
+        try {
+          const response = await extBgTabs.sendMessage(tab.id, { action: 'checkProfilePage' });
+          sendResponse(response);
+          return;
+        } catch (csError) {
+          sendResponse(pageInfoFromUrl(tab.url));
         }
       } catch (error) {
         sendResponse({ isProfilePage: false });
+      }
+    })();
+    return true; // Keep channel open for async
+  } else if (message.action === 'redirectToTab') {
+    // Redirect the active tab to a given profile tab (media/replies)
+    const tab = message.tab || 'media';
+    (async () => {
+      try {
+        const tabs = await extBgTabs.query({ active: true, currentWindow: true });
+        if (tabs[0]) {
+          try {
+            await extBgTabs.sendMessage(tabs[0].id, { action: 'redirectToTab', tab });
+            sendResponse({ success: true });
+          } catch (csError) {
+            // Content script unreachable: navigate the tab directly.
+            const info = pageInfoFromUrl(tabs[0].url);
+            if (info.username) {
+              await extBgTabs.update(tabs[0].id, {
+                url: `https://www.threads.com/@${info.username}/${tab}`
+              });
+              sendResponse({ success: true, viaUrl: true });
+            } else {
+              sendResponse({ success: false, error: 'Could not determine profile username' });
+            }
+          }
+        } else {
+          sendResponse({ success: false, error: 'No active tab' });
+        }
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
       }
     })();
     return true; // Keep channel open for async
@@ -585,9 +786,9 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Redirect the active tab to media page
     (async () => {
       try {
-        const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+        const tabs = await extBgTabs.query({ active: true, currentWindow: true });
         if (tabs[0]) {
-          await browser.tabs.sendMessage(tabs[0].id, { action: 'redirectToMedia' });
+          await extBgTabs.sendMessage(tabs[0].id, { action: 'redirectToMedia' });
           sendResponse({ success: true });
         } else {
           sendResponse({ success: false, error: 'No active tab' });
@@ -598,10 +799,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true; // Keep channel open for async
   } else if (message.action === 'checkExistingDownloads') {
-    // Check for existing downloads for a username
+    // Check for existing downloads for a username, scoped to the source tab
     const username = message.username || 'threads-user';
 
-    checkExistingDownloads(username).then((existingFiles) => {
+    checkExistingDownloads(username, message.source_tab).then((existingFiles) => {
       const latestDatetime = findLatestDatetime(existingFiles);
       sendResponse({
         exists: existingFiles.length > 0,
@@ -631,6 +832,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Support both new mediaItems format and legacy urls format
     let mediaItems = message.mediaItems || (message.urls ? message.urls.map(url => ({ url, type: 'image', datetime: null })) : []);
     let username = message.username || 'threads-user';
+    const resumeTab = normalizeSourceTab(message.source_tab, 'media');
 
 
     // Sanitize username to prevent path traversal
@@ -668,7 +870,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
       postMetadata = message.metadata;
     }
 
-    // Add to download queue
+    // Add to download queue (carry source_tab through for filenames/resume)
     totalFiles = validItems.length;
     validItems.forEach((item, index) => {
       downloadQueue.push({
@@ -677,19 +879,20 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         index: index + 1,
         total: validItems.length,
         type: item.type || 'image',
-        datetime: item.datetime || null
+        datetime: item.datetime || null,
+        source_tab: normalizeSourceTab(item.source_tab, resumeTab)
       });
     });
 
     // Save state for resume functionality
     savedState = {
-      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime })),
+      queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime, source_tab: item.source_tab })),
       totalFiles: totalFiles,
       downloadCount: downloadCount,
       username: username,
       metadata: postMetadata
     };
-    browser.storage.local.set({ downloadState: savedState }).catch(() => { });
+    extBgStorage.local.set({ downloadState: savedState }).catch(() => { });
 
     // Reset stop flag and cooldown milestone when starting new download
     shouldStop = false;
@@ -723,16 +926,12 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     (async () => {
       try {
-        const platformInfo = await browser.runtime.getPlatformInfo();
-        const isAndroid = platformInfo.os === 'android';
-        const downloadOptions = {
-          url: url,
-          filename: isAndroid ? filename : `threads-downloads/${username}/${filename}`
-        };
-        if (!isAndroid) {
-          downloadOptions.saveAs = false;
-        }
-        await browser.downloads.download(downloadOptions);
+        const downloadOptions = await buildDownloadOptions({
+          url,
+          usernameDir: username,
+          filename
+        });
+        await extBgDownloads.download(downloadOptions);
         sendResponse({ success: true });
       } catch (error) {
         sendResponse({ success: false, error: error.message || 'Download failed' });
@@ -751,7 +950,7 @@ async function processDownloadQueue() {
     isDownloading = false;
     // Don't clear state when stopped - allow resume
     // Keep downloadCount, totalFiles, and lastCooldownMilestone for resume
-    browser.runtime.sendMessage({ action: 'downloadStopped' }).catch(() => { });
+    extBg.sendMessage({ action: 'downloadStopped' }).catch(() => { });
     return;
   }
 
@@ -767,7 +966,7 @@ async function processDownloadQueue() {
     if (postMetadata.length > 0) {
       // Capture username before clearing savedState (storage callback is async)
       const exportUsername = savedState ? savedState.username : 'threads-user';
-      browser.storage.local.get(['exportMetadata', 'metadataFormat']).then((result) => {
+      extBgStorage.local.get(['exportMetadata', 'metadataFormat']).then((result) => {
         if (result.exportMetadata) {
           const format = result.metadataFormat || 'json';
           const username = exportUsername;
@@ -790,32 +989,25 @@ async function processDownloadQueue() {
           const blob = new Blob([content], { type: mimeType });
           const url = URL.createObjectURL(blob);
 
-          browser.runtime.getPlatformInfo().then((platformInfo) => {
-            const isAndroid = platformInfo.os === 'android';
+          (async () => {
             const filename = `${username}_${dateStr}_metadata.${extension}`;
-
-            const downloadOptions = {
-              url: url,
-              filename: isAndroid ? filename : `threads-downloads/${username}/${filename}`
-            };
-
-            if (!isAndroid) {
-              downloadOptions.saveAs = false;
-            }
-
-            browser.downloads.download(downloadOptions).then(() => {
-              URL.revokeObjectURL(url);
-            }).catch(() => {
-              URL.revokeObjectURL(url);
-            });
-          });
+            try {
+              const downloadOptions = await buildDownloadOptions({
+                url,
+                usernameDir: username,
+                filename
+              });
+              await extBgDownloads.download(downloadOptions);
+            } catch (e) { /* ignore */ }
+            URL.revokeObjectURL(url);
+          })();
         }
       }).catch(() => { });
     }
 
     savedState = null; // Clear saved state when complete
-    browser.storage.local.remove(['downloadState']).catch(() => { });
-    browser.runtime.sendMessage({ action: 'downloadComplete' }).catch(() => { });
+    extBgStorage.local.remove(['downloadState']).catch(() => { });
+    extBg.sendMessage({ action: 'downloadComplete' }).catch(() => { });
     return;
   }
 
@@ -828,7 +1020,7 @@ async function processDownloadQueue() {
   if (downloadCount > 0 && downloadCount % 100 === 0 && downloadQueue.length > 0 && currentMilestone > lastCooldownMilestone) {
     lastCooldownMilestone = currentMilestone;
     cooldownUntil = now + settings.cooldownAfter100;
-    browser.runtime.sendMessage({
+    extBg.sendMessage({
       action: 'cooldownStarted',
       duration: settings.cooldownAfter100
     }).catch(() => { });
@@ -852,7 +1044,7 @@ async function processDownloadQueue() {
       await new Promise(resolve => setTimeout(resolve, settings.cooldownMs - timeSinceLastDownload));
     }
 
-    const extension = detectExtensionFromUrl(item.url);
+    const extension = detectExtensionFromUrl(item.url, item.type);
     const sanitizedUsername = sanitizeFilename(item.username);
     const filename = buildQueueFilename(item, extension);
 
@@ -865,26 +1057,28 @@ async function processDownloadQueue() {
     // Download the file
     // Note: For Instagram/Facebook CDN URLs, the original URL with query parameters is required
     try {
-      // Detect platform to handle Android limitations
-      const platformInfo = await browser.runtime.getPlatformInfo();
-      const isAndroid = platformInfo.os === 'android';
-
-      const downloadOptions = {
+      const downloadOptions = await buildDownloadOptions({
         url: item.url,
-        // Firefox on Android doesn't support subdirectories
-        filename: isAndroid ? filename : `threads-downloads/${sanitizedUsername}/${filename}`,
-      };
+        usernameDir: sanitizedUsername,
+        filename
+      });
 
-      // saveAs is not supported on Android and throws an error if set to true (or even false in some versions)
-      if (!isAndroid) {
-        downloadOptions.saveAs = false;
-      }
-
-      const downloadId = await browser.downloads.download(downloadOptions);
+      await extBgDownloads.download(downloadOptions);
     } catch (downloadError) {
-      // Continue with next item instead of stopping
-      setTimeout(() => processDownloadQueue(), 0);
-      return;
+      // One retry after a short backoff (mobile networks often hiccup once).
+      try {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const retryOptions = await buildDownloadOptions({
+          url: item.url,
+          usernameDir: sanitizedUsername,
+          filename
+        });
+        await extBgDownloads.download(retryOptions);
+      } catch (retryError) {
+        // Continue with next item instead of stopping
+        setTimeout(() => processDownloadQueue(), 0);
+        return;
+      }
     }
 
     downloadCount++;
@@ -893,17 +1087,17 @@ async function processDownloadQueue() {
     // Update saved state for resume functionality
     if (downloadQueue.length > 0 || downloadCount < totalFiles) {
       savedState = {
-        queue: downloadQueue.map(item => ({ url: item.url, username: item.username, index: item.index, total: item.total, type: item.type, datetime: item.datetime })),
+        queue: downloadQueue.map(entry => ({ url: entry.url, username: entry.username, index: entry.index, total: entry.total, type: entry.type, datetime: entry.datetime, source_tab: entry.source_tab })),
         totalFiles: totalFiles,
         downloadCount: downloadCount,
         username: item.username,
         metadata: postMetadata
       };
-      browser.storage.local.set({ downloadState: savedState }).catch(() => { });
+      extBgStorage.local.set({ downloadState: savedState }).catch(() => { });
     }
 
     // Notify popup of progress
-    browser.runtime.sendMessage({
+    extBg.sendMessage({
       action: 'downloadProgress',
       current: item.index,
       total: item.total,
@@ -921,7 +1115,7 @@ async function processDownloadQueue() {
 }
 
 // Listen for download completion
-browser.downloads.onChanged.addListener((downloadDelta) => {
+extBgDownloads.onChanged.addListener((downloadDelta) => {
   if (downloadDelta.state && downloadDelta.state.current === 'complete') {
     // Download completed successfully
   } else if (downloadDelta.state && downloadDelta.state.current === 'interrupted') {

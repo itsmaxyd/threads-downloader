@@ -19,14 +19,17 @@ function showError(message, duration = 5000) {
   const icon = document.createElement('span');
   icon.className = 'error-icon';
   icon.textContent = '⚠️';
+  icon.setAttribute('aria-hidden', 'true');
 
   const text = document.createElement('span');
   text.className = 'error-text';
   text.textContent = message;
 
   const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
   closeBtn.className = 'error-close';
   closeBtn.textContent = '✕';
+  closeBtn.setAttribute('aria-label', 'Dismiss error');
   closeBtn.addEventListener('click', () => errorDiv.remove());
 
   errorDiv.appendChild(icon);
@@ -69,6 +72,33 @@ const metadataFormatGroup = document.getElementById('metadataFormatGroup');
 const redirectSettingSelect = document.getElementById('redirectSetting');
 const singleMediaUrlInput = document.getElementById('singleMediaUrlInput');
 const downloadSingleBtn = document.getElementById('downloadSingleBtn');
+const sourceTabSelect = document.getElementById('sourceTabSelect');
+const includeForeignCheckbox = document.getElementById('includeForeignReplies');
+const versionBadge = document.getElementById('versionBadge');
+const progressWrap = document.getElementById('progress');
+
+// Keep role=progressbar semantics in sync with the visual bar.
+function setProgress(percent, text) {
+  const clamped = Math.max(0, Math.min(100, percent || 0));
+  progressBar.style.width = `${clamped}%`;
+  if (progressWrap) {
+    progressWrap.setAttribute('aria-valuenow', String(Math.round(clamped)));
+  }
+  if (typeof text === 'string') {
+    progressText.textContent = text;
+  }
+}
+
+// Runtime capability flags (Firefox Android lacks tabs API surface in popups
+// in some builds; detect once and degrade gracefully).
+const runtimeCaps = {
+  hasTabs: (typeof browser !== 'undefined' && !!(browser.tabs && browser.tabs.query)) ||
+    (typeof chrome !== 'undefined' && !!(chrome.tabs && chrome.tabs.query)),
+  isAndroid: false
+};
+browser.runtime.getPlatformInfo().then((info) => {
+  runtimeCaps.isAndroid = !!(info && info.os === 'android');
+}).catch(() => { });
 
 // Store current username for metadata export
 let currentUsername = 'threads-user';
@@ -76,13 +106,73 @@ let currentUsername = 'threads-user';
 // Store extracted media data for resume functionality
 let pendingMediaData = null;
 
+// Resolve the requested source (Media / Replies / Auto) + foreign toggle.
+// Persisted so mobile users — who can't easily hop tabs mid-popup — keep
+// their last choice.
+function getRequestedSource() {
+  const source = (sourceTabSelect && sourceTabSelect.value) || 'auto';
+  const includeForeign = !!(includeForeignCheckbox && includeForeignCheckbox.checked);
+  return { source, includeForeign };
+}
+
+function loadSourceSettings() {
+  browser.storage.local.get(['sourceTab', 'includeForeign']).then((result) => {
+    if (sourceTabSelect && result.sourceTab) {
+      sourceTabSelect.value = result.sourceTab;
+    }
+    if (includeForeignCheckbox && result.includeForeign !== undefined) {
+      includeForeignCheckbox.checked = !!result.includeForeign;
+    }
+  }).catch(() => { });
+  if (sourceTabSelect) {
+    sourceTabSelect.addEventListener('change', () => {
+      browser.storage.local.set({ sourceTab: sourceTabSelect.value }).catch(() => { });
+      // Changing tabs clears a stale mismatch prompt from a previous choice.
+      const mismatch = document.getElementById('tabMismatch');
+      if (mismatch) mismatch.remove();
+    });
+  }
+  if (includeForeignCheckbox) {
+    includeForeignCheckbox.addEventListener('change', () => {
+      browser.storage.local.set({ includeForeign: includeForeignCheckbox.checked }).catch(() => { });
+    });
+  }
+}
+
+// Render the extension version next to the title (from the manifest).
+function loadVersionBadge() {
+  if (!versionBadge) return;
+  try {
+    const manifest = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest)
+      ? chrome.runtime.getManifest()
+      : (typeof browser !== 'undefined' && browser.runtime && browser.runtime.getManifest
+        ? browser.runtime.getManifest()
+        : null);
+    if (manifest && manifest.version) {
+      versionBadge.textContent = `v${manifest.version}`;
+    }
+  } catch (e) { /* leave badge empty */ }
+}
+
 // Profile page redirect functions
 async function checkProfilePage() {
   try {
     const response = await browser.runtime.sendMessage({ action: 'checkProfilePage' });
     if (response && response.isProfilePage) {
-      showProfileRedirectNotification(response.mediaUrl);
+      showProfileRedirectNotification(response.mediaUrl, response.repliesUrl);
       return true;
+    }
+    if (response && response.kind && (response.kind === 'media' || response.kind === 'replies')) {
+      // Pre-select the matching source tab only when the user never saved a
+      // preference — a stored choice always wins over the current tab.
+      if (sourceTabSelect) {
+        try {
+          const stored = await browser.storage.local.get(['sourceTab']);
+          if (!stored.sourceTab && sourceTabSelect.value === 'auto') {
+            sourceTabSelect.value = response.kind;
+          }
+        } catch (e) { /* keep current selection */ }
+      }
     }
   } catch (error) {
     // Silently fail - not on a Threads page
@@ -100,8 +190,8 @@ async function getRedirectSetting() {
   }
 }
 
-// Show notification with redirect option
-async function showProfileRedirectNotification(mediaUrl) {
+// Show notification with redirect option (Media or Replies target)
+async function showProfileRedirectNotification(mediaUrl, repliesUrl) {
   const redirectSetting = await getRedirectSetting();
 
   if (redirectSetting === 'auto') {
@@ -121,31 +211,46 @@ async function showProfileRedirectNotification(mediaUrl) {
     return;
   }
 
-  // Notify - show redirect button
+  // Notify - show redirect buttons (Media + Replies)
   const notification = document.createElement('div');
   notification.className = 'redirect-notification';
 
   const p = document.createElement('p');
-  p.textContent = "You're on a profile page. Redirect to media page?";
+  p.textContent = "You're on a profile page. Redirect to a download tab?";
   notification.appendChild(p);
 
   const btnContainer = document.createElement('div');
   btnContainer.className = 'redirect-buttons';
 
-  const redirectBtn = document.createElement('button');
-  redirectBtn.id = 'redirectBtn';
-  redirectBtn.className = 'redirect-btn redirect-btn-primary';
-  redirectBtn.textContent = 'Go to Media Page';
-  redirectBtn.onclick = async () => {
+  async function goTo(tab, label) {
     statusDiv.className = 'status extracting';
-    statusDiv.textContent = 'Redirecting to media page...';
+    statusDiv.textContent = `Redirecting to ${label}...`;
     notification.remove();
-    await browser.runtime.sendMessage({ action: 'redirectToMedia' });
+    try {
+      await browser.runtime.sendMessage({ action: 'redirectToTab', tab });
+    } catch (e) {
+      await browser.runtime.sendMessage({ action: 'redirectToMedia' });
+    }
     // Close popup after redirect
     window.close();
-  };
+  }
+
+  const mediaBtn = document.createElement('button');
+  mediaBtn.type = 'button';
+  mediaBtn.id = 'redirectBtn';
+  mediaBtn.className = 'redirect-btn redirect-btn-primary';
+  mediaBtn.textContent = 'Media';
+  mediaBtn.onclick = () => goTo('media', 'Media tab');
+
+  const repliesBtn = document.createElement('button');
+  repliesBtn.type = 'button';
+  repliesBtn.id = 'redirectRepliesBtn';
+  repliesBtn.className = 'redirect-btn redirect-btn-primary';
+  repliesBtn.textContent = 'Replies';
+  repliesBtn.onclick = () => goTo('replies', 'Replies tab');
 
   const dismissBtn = document.createElement('button');
+  dismissBtn.type = 'button';
   dismissBtn.id = 'dismissBtn';
   dismissBtn.className = 'redirect-btn redirect-btn-secondary';
   dismissBtn.textContent = 'Dismiss';
@@ -153,7 +258,8 @@ async function showProfileRedirectNotification(mediaUrl) {
     notification.remove();
   };
 
-  btnContainer.appendChild(redirectBtn);
+  btnContainer.appendChild(mediaBtn);
+  btnContainer.appendChild(repliesBtn);
   btnContainer.appendChild(dismissBtn);
   notification.appendChild(btnContainer);
 
@@ -198,7 +304,11 @@ function showResumeDialog(fileCount, latestDatetime, username, mediaData) {
   box.className = 'resume-dialog';
 
   const heading = document.createElement('h3');
+  heading.id = 'resumeDialogTitle';
   heading.textContent = 'Previous Downloads Found';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'resumeDialogTitle');
 
   const countPara = document.createElement('p');
   countPara.className = 'resume-count';
@@ -222,11 +332,13 @@ function showResumeDialog(fileCount, latestDatetime, username, mediaData) {
   // Helper to build a resume dialog button
   function makeResumeBtn(id, className, iconText, labelText) {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.id = id;
     btn.className = `resume-btn ${className}`;
     const icon = document.createElement('span');
     icon.className = 'resume-btn-icon';
     icon.textContent = iconText;
+    icon.setAttribute('aria-hidden', 'true');
     btn.appendChild(icon);
     btn.appendChild(document.createTextNode(` ${labelText}`));
     return btn;
@@ -249,11 +361,13 @@ function showResumeDialog(fileCount, latestDatetime, username, mediaData) {
   // Button handlers
   resumeFromLatestBtn.addEventListener('click', async () => {
     overlay.remove();
+    downloadBtn.focus();
     await startDownloadWithResume(mediaData, latestDatetime);
   });
 
   downloadAllBtn.addEventListener('click', async () => {
     overlay.remove();
+    downloadBtn.focus();
     await startDownloadWithResume(mediaData, null);
   });
 
@@ -262,7 +376,81 @@ function showResumeDialog(fileCount, latestDatetime, username, mediaData) {
     downloadBtn.disabled = false;
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Ready';
+    downloadBtn.focus();
   });
+
+  // Focus the primary action for keyboard users.
+  resumeFromLatestBtn.focus();
+}
+
+// Offer an inline redirect when the content script reports a tab mismatch
+// (e.g. requested Replies but the user is on Media).
+function showTabMismatch(message, targetTab, targetUrl) {
+  const existing = document.getElementById('tabMismatch');
+  if (existing) existing.remove();
+  const box = document.createElement('div');
+  box.id = 'tabMismatch';
+  box.className = 'redirect-notification';
+
+  const p = document.createElement('p');
+  p.textContent = message || `Switch to the ${targetTab} tab to continue.`;
+  box.appendChild(p);
+
+  const btnContainer = document.createElement('div');
+  btnContainer.className = 'redirect-buttons';
+
+  const goBtn = document.createElement('button');
+  goBtn.type = 'button';
+  goBtn.className = 'redirect-btn redirect-btn-primary';
+  goBtn.textContent = `Go to ${targetTab}`;
+  goBtn.onclick = async () => {
+    try {
+      await browser.runtime.sendMessage({ action: 'redirectToTab', tab: targetTab });
+    } catch (e) {
+      await browser.runtime.sendMessage({ action: 'redirectToMedia' });
+    }
+    window.close();
+  };
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.type = 'button';
+  dismissBtn.className = 'redirect-btn redirect-btn-secondary';
+  dismissBtn.textContent = 'Dismiss';
+  dismissBtn.onclick = () => box.remove();
+
+  btnContainer.appendChild(goBtn);
+  btnContainer.appendChild(dismissBtn);
+  box.appendChild(btnContainer);
+  statusDiv.parentNode.insertBefore(box, statusDiv.nextSibling);
+}
+
+// Extract + (optionally) queue for download, shared by Download/Prepare.
+// Handles the tab-mismatch redirect flow from the content script.
+async function runExtraction({ prepareOnly, limit, usernameOverride, source, includeForeign, tab }) {
+  const response = await browser.tabs.sendMessage(tab.id, {
+    action: 'extractMedia',
+    limit,
+    prepareOnly,
+    usernameOverride,
+    sourceTab: source,
+    includeForeign
+  });
+  // Persist source choice alongside the last extraction.
+  if (source && source !== 'auto') {
+    browser.storage.local.set({ sourceTab: source }).catch(() => { });
+  }
+  if (response && response.needsRedirect) {
+    showTabMismatch(response.error, response.targetTab, response.targetUrl);
+    statusDiv.className = 'status idle';
+    statusDiv.textContent = 'Ready';
+    progressDiv.style.display = 'none';
+    return { redirected: true };
+  }
+  return response;
+}
+
+function isSupportedPage(url) {
+  return !!url && (url.includes('threads.net') || url.includes('threads.com'));
 }
 
 // Start download with optional resume datetime
@@ -275,8 +463,7 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
       statusDiv.textContent = 'Downloading all media...';
     }
     progressDiv.style.display = 'block';
-    progressText.textContent = 'Starting download...';
-    progressBar.style.width = '0%';
+    setProgress(0, 'Starting download...');
     showDownloadingState();
 
     const response = await browser.runtime.sendMessage({
@@ -284,6 +471,7 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
       mediaItems: mediaData.mediaItems,
       username: mediaData.username,
       metadata: mediaData.metadata,
+      source_tab: mediaData.source_tab || 'media',
       resumeFromDatetime: resumeFromDatetime
     });
 
@@ -478,38 +666,68 @@ downloadBtn.addEventListener('click', async () => {
       return;
     }
 
-    // Check if it's a media page
-    if (!url.includes('/media')) {
-      const proceed = confirm('This doesn\'t appear to be a media page. Continue anyway?');
+    const { source, includeForeign } = getRequestedSource();
+
+    // Soft tab check — Media, Replies, or profile-root all can work; the
+    // content script confirms + offers redirect on mismatch.
+    if (!url.includes('/media') && !url.includes('/replies')) {
+      const proceed = confirm('This doesn\'t appear to be a Media or Replies tab. Continue anyway?');
       if (!proceed) return;
     }
 
     downloadBtn.disabled = true;
     statusDiv.className = 'status extracting';
-    statusDiv.textContent = 'Extracting media from page...';
+    statusDiv.textContent = source === 'replies'
+      ? 'Extracting reply media from page...'
+      : 'Extracting media from page...';
 
     // Get download limit from select
     const limitValue = downloadLimitSelect.value;
     const limit = limitValue === 'all' ? null : parseInt(limitValue, 10);
 
-    // Send message to content script with limit
-    const response = await browser.tabs.sendMessage(tab.id, {
-      action: 'extractMedia',
-      limit: limit,
-      prepareOnly: false,
-      usernameOverride: usernameOverride
-    });
+    // Send message to content script with limit + source
+    let response;
+    try {
+      response = await runExtraction({
+        prepareOnly: false, limit, usernameOverride, source, includeForeign, tab
+      });
+    } catch (error) {
+      // Re-inject the content script and retry once (Firefox Android often
+      // drops content-script registration after process restarts).
+      // scripting.* is MV3-only; guard so Firefox MV2 never throws here.
+      if (/receiving end does not exist|no such tab|message port closed|could not establish connection/i.test(String((error && error.message) || error))) {
+        try {
+          const scriptingApi = (typeof browser !== 'undefined' && browser.scripting)
+            || (typeof chrome !== 'undefined' && chrome.scripting);
+          if (scriptingApi && scriptingApi.executeScript) {
+            await scriptingApi.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+          }
+          response = await runExtraction({
+            prepareOnly: false, limit, usernameOverride, source, includeForeign, tab
+          });
+        } catch (retryError) {
+          throw retryError;
+        }
+      } else {
+        throw error;
+      }
+    }
+    if (response && response.redirected) {
+      downloadBtn.disabled = false;
+      return;
+    }
 
     if (response.success) {
       // Store username for metadata export
       currentUsername = response.username || 'threads-user';
 
-      // Check for existing downloads before starting
+      // Check for existing downloads before starting (scoped to source tab)
       statusDiv.textContent = 'Checking for existing downloads...';
 
       const existingCheck = await browser.runtime.sendMessage({
         action: 'checkExistingDownloads',
-        username: currentUsername
+        username: currentUsername,
+        source_tab: response.source_tab || source
       });
 
       if (existingCheck.exists) {
@@ -521,7 +739,8 @@ downloadBtn.addEventListener('click', async () => {
         pendingMediaData = {
           mediaItems: response.mediaItems || (response.urls ? response.urls.map(url => ({ url, type: 'image', datetime: null })) : []),
           username: currentUsername,
-          metadata: response.metadata || []
+          metadata: response.metadata || [],
+          source_tab: response.source_tab || source
         };
 
         showResumeDialog(existingCheck.count, existingCheck.latestDatetime, currentUsername, pendingMediaData);
@@ -530,8 +749,7 @@ downloadBtn.addEventListener('click', async () => {
         statusDiv.className = 'status downloading';
         statusDiv.textContent = `Found ${response.count} media files. Downloading...`;
         progressDiv.style.display = 'block';
-        progressText.textContent = `Queued: ${response.count} files`;
-        progressBar.style.width = '0%';
+        setProgress(0, `Queued: ${response.count} files`);
         showDownloadingState();
 
         // Start status polling
@@ -569,8 +787,9 @@ prepareBtn.addEventListener('click', async () => {
     const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : null;
     const limitValue = downloadLimitSelect.value;
     const limit = limitValue === 'all' ? null : parseInt(limitValue, 10);
+    const { source, includeForeign } = getRequestedSource();
 
-    if (!url.includes('threads.net') && !url.includes('threads.com')) {
+    if (!isSupportedPage(url)) {
       showError('Please navigate to a Threads page first (threads.net or threads.com)');
       return;
     }
@@ -580,27 +799,39 @@ prepareBtn.addEventListener('click', async () => {
     downloadBtn.disabled = true;
     prepareBtn.disabled = true;
 
-    const response = await browser.tabs.sendMessage(tab.id, {
-      action: 'extractMedia',
-      limit: limit,
-      prepareOnly: true,
-      usernameOverride: usernameOverride
+    const response = await runExtraction({
+      prepareOnly: true, limit, usernameOverride, source, includeForeign, tab
     });
+    if (response && response.redirected) {
+      downloadBtn.disabled = false;
+      prepareBtn.disabled = false;
+      return;
+    }
 
     if (response.success && response.urls && response.urls.length > 0) {
       const username = response.username || 'threads-user';
+      const tabTag = (response.source_tab || source || 'media');
       // Handle both array of strings and array of objects
       const urlStrings = response.urls.map(item => typeof item === 'string' ? item : item.url);
       const text = urlStrings.join('\n');
       // Use blob URL like the spec for compatibility
       const blob = new Blob([text], { type: 'text/plain' });
       const blobUrl = URL.createObjectURL(blob);
-      await browser.downloads.download({
-        url: blobUrl,
-        filename: `threads-queues/${username}-queue.txt`,
-        saveAs: false
-      });
-      URL.revokeObjectURL(blobUrl);
+      try {
+        await browser.downloads.download({
+          url: blobUrl,
+          filename: `threads-queues/${username}-${tabTag}-queue.txt`,
+          saveAs: false
+        });
+      } catch (downloadError) {
+        // Android fallback: open the queue as a shareable/downloadable blob.
+        if (runtimeCaps.isAndroid) {
+          await browser.tabs.create({ url: blobUrl });
+        } else {
+          throw downloadError;
+        }
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
       statusDiv.className = 'status idle';
       statusDiv.textContent = `Queue saved (${response.urls.length} links)`;
     } else {
@@ -636,16 +867,18 @@ queueFileInput.addEventListener('change', async (event) => {
       return;
     }
     const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : 'threads-user';
+    const { source } = getRequestedSource();
     statusDiv.className = 'status downloading';
     statusDiv.textContent = `Loading queue file (${lines.length} links)...`;
     progressDiv.style.display = 'block';
-    progressBar.style.width = '0%';
+    setProgress(0);
     showDownloadingState();
 
     await browser.runtime.sendMessage({
       action: 'downloadMediaFromList',
       urls: lines,
-      username: usernameOverride
+      username: usernameOverride,
+      source_tab: source === 'auto' ? 'media' : source
     });
 
     startStatusPolling();
@@ -732,8 +965,7 @@ function startStatusPolling() {
         if (response.totalFiles > 0) {
           const downloaded = response.downloadCount || 0;
           const progress = (downloaded / response.totalFiles) * 100;
-          progressBar.style.width = `${Math.min(progress, 100)}%`;
-          progressText.textContent = `Downloaded: ${downloaded}/${response.totalFiles} (${response.queueLength} remaining)`;
+          setProgress(progress, `Downloaded: ${downloaded}/${response.totalFiles} (${response.queueLength} remaining)`);
         } else if (response.queueLength > 0) {
           progressText.textContent = `Queue: ${response.queueLength} remaining`;
         } else {
@@ -784,8 +1016,7 @@ browser.runtime.onMessage.addListener((message) => {
     const total = message.totalFiles || message.total;
     if (total > 0) {
       const progress = (downloaded / total) * 100;
-      progressBar.style.width = `${Math.min(progress, 100)}%`;
-      progressText.textContent = `Downloaded: ${downloaded}/${total} (${message.remaining} in queue)`;
+      setProgress(progress, `Downloaded: ${downloaded}/${total} (${message.remaining} in queue)`);
     } else {
       progressText.textContent = `Downloaded: ${message.current}/${message.total} (${message.remaining} in queue)`;
     }
@@ -807,7 +1038,7 @@ browser.runtime.onMessage.addListener((message) => {
   } else if (message.action === 'downloadComplete') {
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'All downloads complete!';
-    progressBar.style.width = '100%';
+    setProgress(100);
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
     showDefaultState();
@@ -821,6 +1052,9 @@ browser.runtime.onMessage.addListener((message) => {
   }
 });
 
+// Init persisted source settings before first paint decisions
+loadSourceSettings();
+
 // Initial status check
 browser.runtime.sendMessage({ action: 'getStatus' }).then((response) => {
   if (response.isDownloading) {
@@ -829,8 +1063,7 @@ browser.runtime.sendMessage({ action: 'getStatus' }).then((response) => {
     progressDiv.style.display = 'block';
     if (response.totalFiles > 0) {
       const progress = ((response.totalFiles - response.queueLength) / response.totalFiles) * 100;
-      progressBar.style.width = `${Math.min(progress, 100)}%`;
-      progressText.textContent = `Downloaded: ${response.totalFiles - response.queueLength}/${response.totalFiles} (${response.queueLength} remaining)`;
+      setProgress(progress, `Downloaded: ${response.totalFiles - response.queueLength}/${response.totalFiles} (${response.queueLength} remaining)`);
     }
     startStatusPolling();
   } else if (response.hasSavedState) {

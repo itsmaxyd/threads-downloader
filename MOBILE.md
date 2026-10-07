@@ -11,9 +11,12 @@
 
 ### Usage
 
-1. Navigate to a Threads user's media page (e.g., `threads.net/@username/media`)
+1. Navigate to a Threads Media tab (`threads.com/@username/media`) or Replies tab
+   (`threads.com/@username/replies`)
 2. Tap the extension icon in the Firefox menu
-3. Use the popup to download media
+3. Pick the source tab in the popup (Auto follows the current tab), then download.
+   If the content script was dropped after a process restart, the popup falls back
+   to URL-based tab detection and offers a one-tap redirect instead of failing.
 
 ### Mobile-Specific Features
 
@@ -31,7 +34,7 @@ Run the mobile packaging script:
 ./package-mobile.sh
 ```
 
-This creates `threads-downloader-firefox-mobile-v1.2.zip` ready for submission to Firefox Add-ons.
+This creates `threads-downloader-firefox-mobile-v1.4.1.zip` ready for submission to Firefox Add-ons.
 
 ### Technical Details
 
@@ -44,7 +47,9 @@ The extension includes `gecko_android` settings in `browser_specific_settings`:
   "browser_specific_settings": {
     "gecko": {
       "id": "threads-downloader@itsmaxyd.github.io",
-      "strict_min_version": "109.0"
+      "strict_min_version": "109.0",
+      "data_collection_permissions": { "required": ["none"] },
+      "supported_on_android": true
     },
     "gecko_android": {
       "strict_min_version": "120.0"
@@ -52,6 +57,11 @@ The extension includes `gecko_android` settings in `browser_specific_settings`:
   }
 }
 ```
+
+> `supported_on_android` and `data_collection_permissions` must live inside
+> `gecko` — a top-level `gecko_android` flag alone is ignored by AMO/Fenix,
+> which is why the previous mobile build never listed correctly.
+> `package-mobile.sh` now validates these keys before zipping.
 
 #### Mobile CSS Adaptations
 

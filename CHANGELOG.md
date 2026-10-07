@@ -2,6 +2,45 @@
 
 All notable changes to the Threads Downloader extension will be documented in this file.
 
+## [1.4.1] - 2026-10-07
+
+### Fixed
+- **UI/UX consistency pass**: every label is now `for`-bound to its control, all buttons
+  carry `type="button"`, decorative icons use empty `alt`, inline flex/width styles moved
+  into shared `.check-row`/`.subgroup`/`.full-width` classes, keyboard focus rings restored
+  (`:focus-visible`), status/progress/dialogs expose `role` + `aria-live`/`aria-modal`
+  semantics, single-URL field uses `type="url"`, resume dialog traps initial focus and
+  returns it on close, saved source-tab preference wins over tab auto-preselect,
+  progress-bar `aria-valuenow` stays in sync via a single `setProgress()` helper,
+  version badge in the header renders from the manifest
+
+## [1.4.0] - 2026-10-07
+
+### Added
+- **Replies-tab downloads**: source selector (Auto / Media / Replies) with author attribution,
+  foreign-media filtering (opt-in "include other users' media"), `_reply` filename markers,
+  `author`/`source_tab`/`is_reply` metadata fields, and tab-mismatch redirect prompts
+- **threads.com-native delivery support**: `lookaside` redirector allowlist, HEIC/HEIF, AVIF,
+  and HLS (`m3u8`) handling, srcset/currentSrc/poster resolution, origin+pathname dedup
+- **Login-wall awareness**: extraction reports truncation when Threads gates pagination
+
+### Fixed
+- **Firefox mobile (Fenix) overhaul**: valid `gecko` + `gecko_android` manifest keys
+  (previously `gecko_android` lived at top level where AMO ignores it), capability-probed
+  `downloads` options (flat `threads-<user>-<file>` names on Android, no `saveAs`),
+  single-shot `downloads.search` resume check, URL-based tab fallback when the content
+  script is unreachable, scripting-API guard for MV2, touch-tuned scroll/pagination,
+  and a validating `package-mobile.sh`
+- **Background queue**: `source_tab` carried through all four queue paths + resume state,
+  one download retry with backoff, typed extension detection (video posters keep image ext)
+- `detectExtensionFromUrl` no longer mislabels unknown-type `.mp4` URLs as `.jpg`
+
+### Changed
+- **Memory-efficient extraction core**: single incremental scan (MutationObserver +
+  scroll-container detection), WeakSet seen-tracking, per-post aggregates built in one
+  pass, bounded maps, cooperative yields — replaces repeated full-DOM rescans + DOM mutation
+- Chrome/Edge (`chrome-version/`) re-synced with Firefox sources behind cross-browser shims
+
 ## [1.3.2] - 2026-03-03
 
 ### Added

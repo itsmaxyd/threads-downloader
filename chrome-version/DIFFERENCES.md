@@ -240,10 +240,26 @@ If you're switching from Firefox to Chrome version:
 
 Both versions are actively maintained and receive the same feature updates. Bug fixes are applied to both versions simultaneously.
 
+## Code Sharing (v1.4.0+)
+
+`content.js`, `background.js`, `popup.js`, and `popup.html` are now byte-identical
+sources shared between Firefox and Chrome, with thin cross-browser shims at the top
+of each script instead of a forked rewrite:
+
+- `content.js`: `extApi` shim (`browser.runtime` → `chrome.runtime` fallback)
+- `background.js`: `extBg` / `extBgStorage` / `extBgDownloads` / `extBgTabs` shims
+- `popup.js`: a `var browser = {...}` promise-wrapper around `chrome.*` callbacks
+  (storage, runtime, tabs, downloads, scripting)
+
+Only `manifest.json` differs (MV2 + `browser_specific_settings.gecko` /
+`gecko_android` on Firefox, MV3 + service worker on Chrome) plus this doc file.
+To sync a fix: copy the root file over the `chrome-version/` twin and re-prepend
+the shim header (the `check` npm script syntax-checks all six files).
+
 ## Version Numbers
 
 Both versions maintain the same version number for feature parity:
-- Current version: 1.3.2
+- Current version: 1.4.1
 - Version numbers will stay synchronized
 
 ## Conclusion

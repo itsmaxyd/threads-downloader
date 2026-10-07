@@ -47,9 +47,21 @@ function runScript(relativePath, options = {}) {
   const code = fs.readFileSync(file, 'utf8');
   const { browser, listeners } = createBrowserStub();
 
+  // Shim aliases mirror background.js/content.js so scripts that reference
+  // extBg/extApi resolve identically under test.
+  const extApi = browser.runtime;
+  const extBg = browser.runtime;
+  const extBgStorage = browser.storage;
+  const extBgDownloads = browser.downloads;
+  const extBgTabs = browser.tabs;
   const sandbox = {
     browser,
     chrome: browser,
+    extApi,
+    extBg,
+    extBgStorage,
+    extBgDownloads,
+    extBgTabs,
     console,
     URL,
     Blob,

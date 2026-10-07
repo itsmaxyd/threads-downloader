@@ -102,6 +102,18 @@
       font-weight: 600;
       transition: color 0.3s ease;
     }
+
+    .version-badge {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: var(--bg-progress);
+      border-radius: 10px;
+      padding: 2px 8px;
+      margin-left: 6px;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
     
     .theme-toggle {
       background: var(--bg-button-secondary);
@@ -199,6 +211,47 @@
       outline: none;
       border-color: var(--bg-button-primary);
       box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+    }
+
+    .setting-input:focus-visible,
+    .icon-button:focus-visible,
+    .redirect-btn:focus-visible,
+    .resume-btn:focus-visible,
+    .save-settings-btn:focus-visible,
+    .settings-close:focus-visible,
+    .theme-toggle:focus-visible,
+    .error-close:focus-visible {
+      outline: 2px solid var(--bg-button-primary);
+      outline-offset: 2px;
+    }
+
+    /* Shared checkbox/radio row (replaces inline flex styles) */
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: normal;
+    }
+
+    .check-row.indent {
+      margin-top: 8px;
+      padding-left: 2px;
+    }
+
+    .subgroup {
+      margin-top: 8px;
+      padding-left: 24px;
+    }
+
+    /* Full-width single-download button (replaces inline width style) */
+    .icon-button.full-width {
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    /* Single-media URL input spacing (replaces inline style) */
+    #singleMediaUrlInput {
+      margin-bottom: 0;
     }
     
     /* Button Grid */
@@ -562,6 +615,53 @@
       color: var(--text-primary);
     }
     
+    /* Error Notification Styles */
+    .error-notification {
+      background: #fee2e2;
+      border: 1px solid #ef4444;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #991b1b;
+      animation: slideIn 0.3s ease;
+    }
+    
+    [data-theme="dark"] .error-notification {
+      background: #450a0a;
+      border-color: #b91c1c;
+      color: #fecaca;
+    }
+    
+    .error-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    
+    .error-text {
+      flex: 1;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    
+    .error-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+      color: inherit;
+      padding: 0;
+      line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+    
+    .error-close:hover {
+      opacity: 1;
+    }
+    
     /* Redirect Notification Styles */
     .redirect-notification {
       background: var(--bg-status-extracting);
@@ -611,54 +711,7 @@
     .redirect-btn-secondary:hover {
       background: var(--bg-button-secondary-hover);
     }
-
-    /* Error Notification Styles */
-    .error-notification {
-      background: #fee2e2;
-      border: 1px solid #ef4444;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: #991b1b;
-      animation: slideIn 0.3s ease;
-    }
-
-    [data-theme="dark"] .error-notification {
-      background: #450a0a;
-      border-color: #b91c1c;
-      color: #fecaca;
-    }
-
-    .error-icon {
-      font-size: 16px;
-      flex-shrink: 0;
-    }
-
-    .error-text {
-      flex: 1;
-      font-size: 13px;
-      line-height: 1.4;
-    }
-
-    .error-close {
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 18px;
-      color: inherit;
-      padding: 0;
-      line-height: 1;
-      opacity: 0.7;
-      transition: opacity 0.2s;
-    }
-
-    .error-close:hover {
-      opacity: 1;
-    }
-
+    
     /* Mobile-specific styles */
     @media screen and (max-width: 400px) {
       body {
@@ -666,56 +719,56 @@
         padding: 12px;
         font-size: 14px;
       }
-
+      
       .container {
         padding: 8px;
       }
-
+      
       .icon-button {
         min-height: 80px;
         font-size: 16px;
         padding: 12px 16px;
       }
-
+      
       .setting-item {
         margin-bottom: 16px;
       }
-
+      
       .setting-input,
       input[type="number"],
       select {
         min-height: 44px;
         font-size: 16px;
       }
-
+      
       .status {
         font-size: 14px;
       }
-
+      
       /* Larger touch targets for checkboxes/radios */
       input[type="checkbox"],
       input[type="radio"] {
         min-width: 24px;
         min-height: 24px;
       }
-
+      
       label {
         padding: 8px 0;
         display: flex;
         align-items: center;
         gap: 8px;
       }
-
+      
       .settings-panel {
         max-width: 280px;
         padding: 16px;
       }
-
+      
       .resume-dialog {
         max-width: 280px;
         padding: 16px;
       }
-
+      
       .info {
         font-size: 12px;
       }
@@ -725,8 +778,8 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>Threads Media Downloader</h1>
-      <button id="themeToggle" class="theme-toggle" title="Toggle theme">
+      <h1>Threads Media Downloader <span class="version-badge" id="versionBadge" title="Extension version"></span></h1>
+      <button type="button" id="themeToggle" class="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
         <svg class="moon-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
         </svg>
@@ -744,10 +797,10 @@
       </button>
     </div>
     
-    <div id="status" class="status idle">Ready</div>
-    
+    <div id="status" class="status idle" role="status" aria-live="polite">Ready</div>
+
     <div class="setting-item">
-      <label class="setting-label">Download Options</label>
+      <label class="setting-label" for="downloadLimitSelect">Download Options</label>
       <select id="downloadLimitSelect" class="setting-input">
         <option value="all">Download All Media</option>
         <option value="50">Recent 50 Media Files</option>
@@ -756,63 +809,77 @@
     </div>
 
     <div class="setting-item">
-      <label class="setting-label">Filename prefix (username, optional)</label>
-      <input type="text" id="usernameInput" class="setting-input" placeholder="threads-user (optional)">
+      <label class="setting-label" for="sourceTabSelect">Source tab</label>
+      <select id="sourceTabSelect" class="setting-input">
+        <option value="auto">Auto (current tab)</option>
+        <option value="media">Media tab</option>
+        <option value="replies">Replies tab</option>
+      </select>
+      <label class="setting-label check-row indent" for="includeForeignReplies">
+        <input type="checkbox" id="includeForeignReplies">
+        Include other users' media in Replies
+      </label>
+    </div>
+
+    <div class="setting-item">
+      <label class="setting-label" for="usernameInput">Filename prefix (username, optional)</label>
+      <input type="text" id="usernameInput" class="setting-input" placeholder="threads-user (optional)" autocomplete="off" spellcheck="false">
     </div>
 
     <!-- Single Media Download Section -->
     <div class="setting-item">
-      <label class="setting-label">Download Single Media from URL</label>
-      <input type="text" id="singleMediaUrlInput" class="setting-input" placeholder="https://www.threads.net/@username/post/...">
-      <button id="downloadSingleBtn" class="icon-button" style="margin-top: 8px; width: 100%;">
-        <img src="assets/app_icons/dl-media.png" alt="Download Single">
+      <label class="setting-label" for="singleMediaUrlInput">Download Single Media from URL</label>
+      <input type="url" id="singleMediaUrlInput" class="setting-input" placeholder="https://www.threads.com/@username/post/..." inputmode="url" autocomplete="off" spellcheck="false">
+      <button type="button" id="downloadSingleBtn" class="icon-button full-width">
+        <img src="assets/app_icons/dl-media.png" alt="">
         <span>Download Single Media</span>
       </button>
     </div>
-
+    
     <!-- Main Action Buttons -->
     <div class="button-grid" id="mainButtons">
-      <button id="downloadBtn" class="icon-button">
-        <img src="assets/app_icons/dl-media.png" alt="Download">
+      <button type="button" id="downloadBtn" class="icon-button">
+        <img src="assets/app_icons/dl-media.png" alt="">
         <span>Download Media</span>
       </button>
-      <button id="prepareBtn" class="icon-button secondary">
-        <img src="assets/app_icons/prep-queue.png" alt="Prepare">
+      <button type="button" id="prepareBtn" class="icon-button secondary">
+        <img src="assets/app_icons/prep-queue.png" alt="">
         <span>Prepare Queue</span>
       </button>
     </div>
-    
+
     <!-- Action Buttons (Stop/Resume) - Centered -->
     <div class="button-grid single-center" id="actionButtons" style="display: none;">
-      <button id="stopBtn" class="icon-button danger">
-        <img src="assets/app_icons/stop-dl.png" alt="Stop">
+      <button type="button" id="stopBtn" class="icon-button danger">
+        <img src="assets/app_icons/stop-dl.png" alt="">
         <span>Stop</span>
       </button>
-      <button id="resumeBtn" class="icon-button">
-        <img src="assets/app_icons/resume-dl.png" alt="Resume">
+      <button type="button" id="resumeBtn" class="icon-button">
+        <img src="assets/app_icons/resume-dl.png" alt="">
         <span>Resume</span>
       </button>
     </div>
-    
+
     <div class="button-grid three-cols">
-      <button id="loadBtn" class="icon-button secondary">
-        <img src="assets/app_icons/load-links.png" alt="Load">
+      <button type="button" id="loadBtn" class="icon-button secondary">
+        <img src="assets/app_icons/load-links.png" alt="">
         <span>Load Queue</span>
       </button>
-      <button id="clearBtn" class="icon-button danger">
-        <img src="assets/app_icons/clr-queue.png" alt="Clear">
+      <button type="button" id="clearBtn" class="icon-button danger">
+        <img src="assets/app_icons/clr-queue.png" alt="">
         <span>Clear Queue</span>
       </button>
-      <button id="settingsBtn" class="icon-button settings-btn">
-        <img src="assets/app_icons/settings.png" alt="Settings">
+      <button type="button" id="settingsBtn" class="icon-button settings-btn" aria-haspopup="dialog">
+        <img src="assets/app_icons/settings.png" alt="">
         <span>Settings</span>
       </button>
     </div>
     
+    <!-- Export Metadata Button removed - metadata is now auto-exported on download completion -->
     
     <input type="file" id="queueFileInput" accept=".txt" class="hidden-input" />
     
-    <div id="progress" class="progress" style="display: none;">
+    <div id="progress" class="progress" style="display: none;" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
       <div id="progressText" class="progress-text"></div>
       <div class="progress-bar-container">
         <div id="progressBar" class="progress-bar"></div>
@@ -820,57 +887,57 @@
     </div>
     
     <div class="info">
-      Navigate to a Threads user media page (e.g., threads.com/@username/media) and click "Download Media"
+      Navigate to a Threads Media or Replies tab (e.g., threads.com/@username/media or /replies) and click "Download Media"
     </div>
   </div>
   
   <!-- Settings Panel Overlay -->
-  <div id="settingsOverlay" class="settings-overlay">
+  <div id="settingsOverlay" class="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="settings-panel">
       <div class="settings-header">
-        <span class="settings-title">Settings</span>
-        <button id="closeSettings" class="settings-close">&times;</button>
+        <span class="settings-title" id="settingsTitle">Settings</span>
+        <button type="button" id="closeSettings" class="settings-close" aria-label="Close settings">&times;</button>
       </div>
       <div class="settings-content">
         <div class="setting-item">
-          <label class="setting-label">Cooldown between downloads (ms)</label>
+          <label class="setting-label" for="cooldownInput">Cooldown between downloads (ms)</label>
           <input type="number" id="cooldownInput" class="setting-input" value="2000" min="500" step="500">
         </div>
-        
+
         <div class="setting-item">
-          <label class="setting-label">Cooldown after 100 downloads (ms)</label>
+          <label class="setting-label" for="cooldown100Input">Cooldown after 100 downloads (ms)</label>
           <input type="number" id="cooldown100Input" class="setting-input" value="120000" min="60000" step="60000">
         </div>
-        
+
         <!-- Metadata Export Settings -->
         <div class="setting-item">
-          <label class="setting-label" style="display: flex; align-items: center; gap: 8px;">
+          <label class="setting-label check-row" for="exportMetadata">
             <input type="checkbox" id="exportMetadata">
             Export post metadata
           </label>
-          <div id="metadataFormatGroup" class="setting-subgroup" style="display: none; margin-top: 8px; padding-left: 24px;">
-            <label class="setting-label" style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
-              <input type="radio" name="metadataFormat" value="json" checked>
+          <div id="metadataFormatGroup" class="setting-subgroup subgroup" style="display: none;">
+            <label class="setting-label check-row" for="metadataFormatJson">
+              <input type="radio" id="metadataFormatJson" name="metadataFormat" value="json" checked>
               JSON format
             </label>
-            <label class="setting-label" style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
-              <input type="radio" name="metadataFormat" value="csv">
+            <label class="setting-label check-row" for="metadataFormatCsv">
+              <input type="radio" id="metadataFormatCsv" name="metadataFormat" value="csv">
               CSV format
             </label>
           </div>
         </div>
-        
+
         <!-- Profile Page Redirect Settings -->
         <div class="setting-item">
-          <label class="setting-label">Profile page redirect</label>
+          <label class="setting-label" for="redirectSetting">Profile page redirect</label>
           <select id="redirectSetting" class="setting-input">
             <option value="notify">Show notification (default)</option>
             <option value="auto">Auto-redirect</option>
             <option value="disabled">Disabled</option>
           </select>
         </div>
-        
-        <button id="saveSettingsBtn" class="save-settings-btn">Save Settings</button>
+
+        <button type="button" id="saveSettingsBtn" class="save-settings-btn">Save Settings</button>
       </div>
     </div>
   </div>

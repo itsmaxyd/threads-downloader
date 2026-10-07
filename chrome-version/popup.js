@@ -1,5 +1,30 @@
+// Cross-browser popup shim: `browser` promise API on Firefox, `chrome` callbacks on Chromium.
+// Wrapped so the shared popup.js source (written against browser.*) runs unmodified.
+if (typeof browser === 'undefined' && typeof chrome !== 'undefined') {
+  var browser = {
+    runtime: {
+      sendMessage: (m) => new Promise((res) => chrome.runtime.sendMessage(m, (r) => res(r))),
+      getPlatformInfo: () => new Promise((res) => chrome.runtime.getPlatformInfo((i) => res(i))),
+      getManifest: () => chrome.runtime.getManifest(),
+      onMessage: chrome.runtime.onMessage
+    },
+    storage: { local: {
+      get: (k) => new Promise((res) => chrome.storage.local.get(k, (r) => res(r || {}))),
+      set: (o) => new Promise((res) => chrome.storage.local.set(o, () => res())),
+      remove: (k) => new Promise((res) => chrome.storage.local.remove(k, () => res()))
+    } },
+    tabs: {
+      query: (q) => new Promise((res) => chrome.tabs.query(q, (t) => res(t || []))),
+      sendMessage: (id, m) => new Promise((res, rej) => { try { chrome.tabs.sendMessage(id, m, (r) => { if (chrome.runtime.lastError) rej(new Error(chrome.runtime.lastError.message)); else res(r); }); } catch (e) { rej(e); } }),
+      create: (o) => new Promise((res) => chrome.tabs.create(o, (t) => res(t))),
+      update: (id, o) => new Promise((res) => chrome.tabs.update(id, o, (t) => res(t)))
+    },
+    downloads: { download: (o) => new Promise((res, rej) => { try { chrome.downloads.download(o, (id) => { if (chrome.runtime.lastError) rej(new Error(chrome.runtime.lastError.message)); else res(id); }); } catch (e) { rej(e); } }) },
+    scripting: (chrome.scripting ? { executeScript: (inj) => new Promise((res, rej) => { try { chrome.scripting.executeScript(inj, (r) => { if (chrome.runtime.lastError) rej(new Error(chrome.runtime.lastError.message)); else res(r); }); } catch (e) { rej(e); } }) } : undefined)
+  };
+}
+
 // Popup script for UI interactions
-// Chrome Manifest V3 version
 
 let statusInterval = null;
 
@@ -12,7 +37,7 @@ function showError(message, duration = 5000) {
   const existingError = document.getElementById('errorMessage');
   if (existingError) existingError.remove();
 
-  // Create error element with safe DOM APIs
+  // Build error element with safe DOM APIs (avoids innerHTML linter warning)
   const errorDiv = document.createElement('div');
   errorDiv.id = 'errorMessage';
   errorDiv.className = 'error-notification';
@@ -20,15 +45,18 @@ function showError(message, duration = 5000) {
   const icon = document.createElement('span');
   icon.className = 'error-icon';
   icon.textContent = '⚠️';
+  icon.setAttribute('aria-hidden', 'true');
 
   const text = document.createElement('span');
   text.className = 'error-text';
   text.textContent = message;
 
   const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
   closeBtn.className = 'error-close';
   closeBtn.textContent = '✕';
-  closeBtn.onclick = () => errorDiv.remove();
+  closeBtn.setAttribute('aria-label', 'Dismiss error');
+  closeBtn.addEventListener('click', () => errorDiv.remove());
 
   errorDiv.appendChild(icon);
   errorDiv.appendChild(text);
@@ -40,9 +68,7 @@ function showError(message, duration = 5000) {
   // Auto-remove after duration
   if (duration > 0) {
     setTimeout(() => {
-      if (errorDiv.parentNode) {
-        errorDiv.remove();
-      }
+      if (errorDiv.parentNode) errorDiv.remove();
     }, duration);
   }
 }
@@ -72,6 +98,33 @@ const metadataFormatGroup = document.getElementById('metadataFormatGroup');
 const redirectSettingSelect = document.getElementById('redirectSetting');
 const singleMediaUrlInput = document.getElementById('singleMediaUrlInput');
 const downloadSingleBtn = document.getElementById('downloadSingleBtn');
+const sourceTabSelect = document.getElementById('sourceTabSelect');
+const includeForeignCheckbox = document.getElementById('includeForeignReplies');
+const versionBadge = document.getElementById('versionBadge');
+const progressWrap = document.getElementById('progress');
+
+// Keep role=progressbar semantics in sync with the visual bar.
+function setProgress(percent, text) {
+  const clamped = Math.max(0, Math.min(100, percent || 0));
+  progressBar.style.width = `${clamped}%`;
+  if (progressWrap) {
+    progressWrap.setAttribute('aria-valuenow', String(Math.round(clamped)));
+  }
+  if (typeof text === 'string') {
+    progressText.textContent = text;
+  }
+}
+
+// Runtime capability flags (Firefox Android lacks tabs API surface in popups
+// in some builds; detect once and degrade gracefully).
+const runtimeCaps = {
+  hasTabs: (typeof browser !== 'undefined' && !!(browser.tabs && browser.tabs.query)) ||
+    (typeof chrome !== 'undefined' && !!(chrome.tabs && chrome.tabs.query)),
+  isAndroid: false
+};
+browser.runtime.getPlatformInfo().then((info) => {
+  runtimeCaps.isAndroid = !!(info && info.os === 'android');
+}).catch(() => { });
 
 // Store current username for metadata export
 let currentUsername = 'threads-user';
@@ -79,13 +132,73 @@ let currentUsername = 'threads-user';
 // Store extracted media data for resume functionality
 let pendingMediaData = null;
 
+// Resolve the requested source (Media / Replies / Auto) + foreign toggle.
+// Persisted so mobile users — who can't easily hop tabs mid-popup — keep
+// their last choice.
+function getRequestedSource() {
+  const source = (sourceTabSelect && sourceTabSelect.value) || 'auto';
+  const includeForeign = !!(includeForeignCheckbox && includeForeignCheckbox.checked);
+  return { source, includeForeign };
+}
+
+function loadSourceSettings() {
+  browser.storage.local.get(['sourceTab', 'includeForeign']).then((result) => {
+    if (sourceTabSelect && result.sourceTab) {
+      sourceTabSelect.value = result.sourceTab;
+    }
+    if (includeForeignCheckbox && result.includeForeign !== undefined) {
+      includeForeignCheckbox.checked = !!result.includeForeign;
+    }
+  }).catch(() => { });
+  if (sourceTabSelect) {
+    sourceTabSelect.addEventListener('change', () => {
+      browser.storage.local.set({ sourceTab: sourceTabSelect.value }).catch(() => { });
+      // Changing tabs clears a stale mismatch prompt from a previous choice.
+      const mismatch = document.getElementById('tabMismatch');
+      if (mismatch) mismatch.remove();
+    });
+  }
+  if (includeForeignCheckbox) {
+    includeForeignCheckbox.addEventListener('change', () => {
+      browser.storage.local.set({ includeForeign: includeForeignCheckbox.checked }).catch(() => { });
+    });
+  }
+}
+
+// Render the extension version next to the title (from the manifest).
+function loadVersionBadge() {
+  if (!versionBadge) return;
+  try {
+    const manifest = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest)
+      ? chrome.runtime.getManifest()
+      : (typeof browser !== 'undefined' && browser.runtime && browser.runtime.getManifest
+        ? browser.runtime.getManifest()
+        : null);
+    if (manifest && manifest.version) {
+      versionBadge.textContent = `v${manifest.version}`;
+    }
+  } catch (e) { /* leave badge empty */ }
+}
+
 // Profile page redirect functions
 async function checkProfilePage() {
   try {
-    const response = await chrome.runtime.sendMessage({ action: 'checkProfilePage' });
+    const response = await browser.runtime.sendMessage({ action: 'checkProfilePage' });
     if (response && response.isProfilePage) {
-      showProfileRedirectNotification(response.mediaUrl);
+      showProfileRedirectNotification(response.mediaUrl, response.repliesUrl);
       return true;
+    }
+    if (response && response.kind && (response.kind === 'media' || response.kind === 'replies')) {
+      // Pre-select the matching source tab only when the user never saved a
+      // preference — a stored choice always wins over the current tab.
+      if (sourceTabSelect) {
+        try {
+          const stored = await browser.storage.local.get(['sourceTab']);
+          if (!stored.sourceTab && sourceTabSelect.value === 'auto') {
+            sourceTabSelect.value = response.kind;
+          }
+        } catch (e) { /* keep current selection */ }
+      }
     }
   } catch (error) {
     // Silently fail - not on a Threads page
@@ -94,27 +207,24 @@ async function checkProfilePage() {
 }
 
 // Get redirect setting from storage
-function getRedirectSetting() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['redirectSetting'], (result) => {
-      if (chrome.runtime.lastError) {
-        resolve('notify');
-        return;
-      }
-      resolve(result.redirectSetting || 'notify');
-    });
-  });
+async function getRedirectSetting() {
+  try {
+    const result = await browser.storage.local.get(['redirectSetting']);
+    return result.redirectSetting || 'notify'; // Default to notify
+  } catch (error) {
+    return 'notify';
+  }
 }
 
-// Show notification with redirect option
-async function showProfileRedirectNotification(mediaUrl) {
+// Show notification with redirect option (Media or Replies target)
+async function showProfileRedirectNotification(mediaUrl, repliesUrl) {
   const redirectSetting = await getRedirectSetting();
 
   if (redirectSetting === 'auto') {
     // Auto redirect
     statusDiv.className = 'status extracting';
     statusDiv.textContent = 'Redirecting to media page...';
-    await chrome.runtime.sendMessage({ action: 'redirectToMedia' });
+    await browser.runtime.sendMessage({ action: 'redirectToMedia' });
     // Close popup after redirect
     window.close();
     return;
@@ -127,31 +237,46 @@ async function showProfileRedirectNotification(mediaUrl) {
     return;
   }
 
-  // Notify - show redirect button
+  // Notify - show redirect buttons (Media + Replies)
   const notification = document.createElement('div');
   notification.className = 'redirect-notification';
 
   const p = document.createElement('p');
-  p.textContent = "You're on a profile page. Redirect to media page?";
+  p.textContent = "You're on a profile page. Redirect to a download tab?";
   notification.appendChild(p);
 
   const btnContainer = document.createElement('div');
   btnContainer.className = 'redirect-buttons';
 
-  const redirectBtn = document.createElement('button');
-  redirectBtn.id = 'redirectBtn';
-  redirectBtn.className = 'redirect-btn redirect-btn-primary';
-  redirectBtn.textContent = 'Go to Media Page';
-  redirectBtn.onclick = async () => {
+  async function goTo(tab, label) {
     statusDiv.className = 'status extracting';
-    statusDiv.textContent = 'Redirecting to media page...';
+    statusDiv.textContent = `Redirecting to ${label}...`;
     notification.remove();
-    await chrome.runtime.sendMessage({ action: 'redirectToMedia' });
+    try {
+      await browser.runtime.sendMessage({ action: 'redirectToTab', tab });
+    } catch (e) {
+      await browser.runtime.sendMessage({ action: 'redirectToMedia' });
+    }
     // Close popup after redirect
     window.close();
-  };
+  }
+
+  const mediaBtn = document.createElement('button');
+  mediaBtn.type = 'button';
+  mediaBtn.id = 'redirectBtn';
+  mediaBtn.className = 'redirect-btn redirect-btn-primary';
+  mediaBtn.textContent = 'Media';
+  mediaBtn.onclick = () => goTo('media', 'Media tab');
+
+  const repliesBtn = document.createElement('button');
+  repliesBtn.type = 'button';
+  repliesBtn.id = 'redirectRepliesBtn';
+  repliesBtn.className = 'redirect-btn redirect-btn-primary';
+  repliesBtn.textContent = 'Replies';
+  repliesBtn.onclick = () => goTo('replies', 'Replies tab');
 
   const dismissBtn = document.createElement('button');
+  dismissBtn.type = 'button';
   dismissBtn.id = 'dismissBtn';
   dismissBtn.className = 'redirect-btn redirect-btn-secondary';
   dismissBtn.textContent = 'Dismiss';
@@ -159,7 +284,8 @@ async function showProfileRedirectNotification(mediaUrl) {
     notification.remove();
   };
 
-  btnContainer.appendChild(redirectBtn);
+  btnContainer.appendChild(mediaBtn);
+  btnContainer.appendChild(repliesBtn);
   btnContainer.appendChild(dismissBtn);
   notification.appendChild(btnContainer);
 
@@ -193,11 +319,9 @@ function formatDatetimeDisplay(isoString) {
 function showResumeDialog(fileCount, latestDatetime, username, mediaData) {
   // Remove any existing dialog
   const existingDialog = document.getElementById('resumeDialogOverlay');
-  if (existingDialog) {
-    existingDialog.remove();
-  }
+  if (existingDialog) existingDialog.remove();
 
-  // Create modal dialog with safe DOM APIs
+  // Build modal with safe DOM APIs (avoids innerHTML linter warning)
   const overlay = document.createElement('div');
   overlay.id = 'resumeDialogOverlay';
   overlay.className = 'resume-dialog-overlay';
@@ -205,70 +329,154 @@ function showResumeDialog(fileCount, latestDatetime, username, mediaData) {
   const box = document.createElement('div');
   box.className = 'resume-dialog';
 
-  const h3 = document.createElement('h3');
-  h3.textContent = 'Previous Downloads Found';
-  box.appendChild(h3);
+  const heading = document.createElement('h3');
+  heading.id = 'resumeDialogTitle';
+  heading.textContent = 'Previous Downloads Found';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'resumeDialogTitle');
 
-  const countP = document.createElement('p');
-  countP.className = 'resume-count';
-  countP.textContent = `Found ${fileCount} existing file(s) for @${username}.`;
-  box.appendChild(countP);
+  const countPara = document.createElement('p');
+  countPara.className = 'resume-count';
+  countPara.textContent = `Found ${fileCount} existing file(s) for @${username}.`;
+
+  box.appendChild(heading);
+  box.appendChild(countPara);
 
   if (latestDatetime) {
-    const dtP = document.createElement('p');
-    dtP.className = 'resume-datetime';
-    dtP.textContent = `Latest download: ${formatDatetimeDisplay(latestDatetime)}`;
-    box.appendChild(dtP);
+    const datePara = document.createElement('p');
+    datePara.className = 'resume-datetime';
+    datePara.textContent = `Latest download: ${formatDatetimeDisplay(latestDatetime)}`;
+    box.appendChild(datePara);
   }
 
-  const infoP = document.createElement('p');
-  infoP.className = 'resume-info';
-  infoP.textContent = 'How would you like to proceed?';
-  box.appendChild(infoP);
+  const infoPara = document.createElement('p');
+  infoPara.className = 'resume-info';
+  infoPara.textContent = 'How would you like to proceed?';
+  box.appendChild(infoPara);
+
+  // Helper to build a resume dialog button
+  function makeResumeBtn(id, className, iconText, labelText) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = id;
+    btn.className = `resume-btn ${className}`;
+    const icon = document.createElement('span');
+    icon.className = 'resume-btn-icon';
+    icon.textContent = iconText;
+    icon.setAttribute('aria-hidden', 'true');
+    btn.appendChild(icon);
+    btn.appendChild(document.createTextNode(` ${labelText}`));
+    return btn;
+  }
 
   const btnWrap = document.createElement('div');
   btnWrap.className = 'resume-dialog-buttons';
 
-  function createBtn(id, className, iconText, labelText) {
-    const b = document.createElement('button');
-    b.id = id;
-    b.className = `resume-btn ${className}`;
-    const s = document.createElement('span');
-    s.className = 'resume-btn-icon';
-    s.textContent = iconText;
-    b.appendChild(s);
-    b.appendChild(document.createTextNode(' ' + labelText));
-    return b;
-  }
+  const resumeFromLatestBtn = makeResumeBtn('resumeFromLatest', 'resume-btn-primary', '▶', 'Resume from Latest');
+  const downloadAllBtn = makeResumeBtn('downloadAll', 'resume-btn-secondary', '⬇', 'Download All');
+  const cancelBtn = makeResumeBtn('cancelDownload', 'resume-btn-cancel', '✕', 'Cancel');
 
-  const resumeBtn = createBtn('resumeFromLatest', 'resume-btn-primary', '▶', 'Resume from Latest');
-  const allBtn = createBtn('downloadAll', 'resume-btn-secondary', '⬇', 'Download All');
-  const cancelBtn = createBtn('cancelDownload', 'resume-btn-cancel', '✕', 'Cancel');
-
-  btnWrap.appendChild(resumeBtn);
-  btnWrap.appendChild(allBtn);
+  btnWrap.appendChild(resumeFromLatestBtn);
+  btnWrap.appendChild(downloadAllBtn);
   btnWrap.appendChild(cancelBtn);
   box.appendChild(btnWrap);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
 
-  // Add button handlers
-  resumeBtn.onclick = async () => {
+  // Button handlers
+  resumeFromLatestBtn.addEventListener('click', async () => {
     overlay.remove();
+    downloadBtn.focus();
     await startDownloadWithResume(mediaData, latestDatetime);
-  };
+  });
 
-  allBtn.onclick = async () => {
+  downloadAllBtn.addEventListener('click', async () => {
     overlay.remove();
+    downloadBtn.focus();
     await startDownloadWithResume(mediaData, null);
-  };
+  });
 
-  cancelBtn.onclick = () => {
+  cancelBtn.addEventListener('click', () => {
     overlay.remove();
     downloadBtn.disabled = false;
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Ready';
+    downloadBtn.focus();
+  });
+
+  // Focus the primary action for keyboard users.
+  resumeFromLatestBtn.focus();
+}
+
+// Offer an inline redirect when the content script reports a tab mismatch
+// (e.g. requested Replies but the user is on Media).
+function showTabMismatch(message, targetTab, targetUrl) {
+  const existing = document.getElementById('tabMismatch');
+  if (existing) existing.remove();
+  const box = document.createElement('div');
+  box.id = 'tabMismatch';
+  box.className = 'redirect-notification';
+
+  const p = document.createElement('p');
+  p.textContent = message || `Switch to the ${targetTab} tab to continue.`;
+  box.appendChild(p);
+
+  const btnContainer = document.createElement('div');
+  btnContainer.className = 'redirect-buttons';
+
+  const goBtn = document.createElement('button');
+  goBtn.type = 'button';
+  goBtn.className = 'redirect-btn redirect-btn-primary';
+  goBtn.textContent = `Go to ${targetTab}`;
+  goBtn.onclick = async () => {
+    try {
+      await browser.runtime.sendMessage({ action: 'redirectToTab', tab: targetTab });
+    } catch (e) {
+      await browser.runtime.sendMessage({ action: 'redirectToMedia' });
+    }
+    window.close();
   };
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.type = 'button';
+  dismissBtn.className = 'redirect-btn redirect-btn-secondary';
+  dismissBtn.textContent = 'Dismiss';
+  dismissBtn.onclick = () => box.remove();
+
+  btnContainer.appendChild(goBtn);
+  btnContainer.appendChild(dismissBtn);
+  box.appendChild(btnContainer);
+  statusDiv.parentNode.insertBefore(box, statusDiv.nextSibling);
+}
+
+// Extract + (optionally) queue for download, shared by Download/Prepare.
+// Handles the tab-mismatch redirect flow from the content script.
+async function runExtraction({ prepareOnly, limit, usernameOverride, source, includeForeign, tab }) {
+  const response = await browser.tabs.sendMessage(tab.id, {
+    action: 'extractMedia',
+    limit,
+    prepareOnly,
+    usernameOverride,
+    sourceTab: source,
+    includeForeign
+  });
+  // Persist source choice alongside the last extraction.
+  if (source && source !== 'auto') {
+    browser.storage.local.set({ sourceTab: source }).catch(() => { });
+  }
+  if (response && response.needsRedirect) {
+    showTabMismatch(response.error, response.targetTab, response.targetUrl);
+    statusDiv.className = 'status idle';
+    statusDiv.textContent = 'Ready';
+    progressDiv.style.display = 'none';
+    return { redirected: true };
+  }
+  return response;
+}
+
+function isSupportedPage(url) {
+  return !!url && (url.includes('threads.net') || url.includes('threads.com'));
 }
 
 // Start download with optional resume datetime
@@ -281,15 +489,15 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
       statusDiv.textContent = 'Downloading all media...';
     }
     progressDiv.style.display = 'block';
-    progressText.textContent = 'Starting download...';
-    progressBar.style.width = '0%';
+    setProgress(0, 'Starting download...');
     showDownloadingState();
 
-    const response = await chrome.runtime.sendMessage({
+    const response = await browser.runtime.sendMessage({
       action: 'downloadMediaWithResume',
       mediaItems: mediaData.mediaItems,
       username: mediaData.username,
       metadata: mediaData.metadata,
+      source_tab: mediaData.source_tab || 'media',
       resumeFromDatetime: resumeFromDatetime
     });
 
@@ -325,18 +533,17 @@ async function startDownloadWithResume(mediaData, resumeFromDatetime) {
 
 // Theme Management
 function initTheme() {
-  chrome.storage.local.get(['theme'], (result) => {
-    if (chrome.runtime.lastError) return;
+  browser.storage.local.get(['theme']).then((result) => {
     const theme = result.theme || 'light';
     document.documentElement.setAttribute('data-theme', theme);
-  });
+  }).catch(() => { });
 }
 
 function toggleTheme() {
   const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
   const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', newTheme);
-  chrome.storage.local.set({ theme: newTheme });
+  browser.storage.local.set({ theme: newTheme }).catch(() => { });
 }
 
 // Settings Panel Management
@@ -386,7 +593,7 @@ settingsOverlay?.addEventListener('click', (e) => {
 });
 
 // Load saved settings
-chrome.storage.local.get(['cooldownMs', 'cooldownAfter100', 'redirectSetting'], (result) => {
+browser.storage.local.get(['cooldownMs', 'cooldownAfter100', 'redirectSetting']).then((result) => {
   if (result.cooldownMs !== undefined) {
     cooldownInput.value = result.cooldownMs;
   }
@@ -399,17 +606,16 @@ chrome.storage.local.get(['cooldownMs', 'cooldownAfter100', 'redirectSetting'], 
 });
 
 // Load metadata settings
-function loadMetadataSettings() {
-  chrome.storage.local.get(['exportMetadata', 'metadataFormat'], (result) => {
-    if (exportMetadataCheckbox) {
-      exportMetadataCheckbox.checked = result.exportMetadata || false;
-      updateMetadataFormatVisibility();
-    }
-    if (result.metadataFormat) {
-      const radio = document.querySelector(`input[name="metadataFormat"][value="${result.metadataFormat}"]`);
-      if (radio) radio.checked = true;
-    }
-  });
+async function loadMetadataSettings() {
+  const settings = await browser.storage.local.get(['exportMetadata', 'metadataFormat']);
+  if (exportMetadataCheckbox) {
+    exportMetadataCheckbox.checked = settings.exportMetadata || false;
+    updateMetadataFormatVisibility();
+  }
+  if (settings.metadataFormat) {
+    const radio = document.querySelector(`input[name="metadataFormat"][value="${settings.metadataFormat}"]`);
+    if (radio) radio.checked = true;
+  }
 }
 
 // Update visibility of metadata format options
@@ -425,7 +631,7 @@ if (exportMetadataCheckbox) {
 }
 
 // Load metadata settings on init
-loadMetadataSettings();
+loadMetadataSettings().catch(() => { });
 
 // Save settings
 saveSettingsBtn.addEventListener('click', () => {
@@ -451,13 +657,13 @@ saveSettingsBtn.addEventListener('click', () => {
     return;
   }
 
-  chrome.storage.local.set({
+  browser.storage.local.set({
     cooldownMs: cooldownMs,
     cooldownAfter100: cooldownAfter100,
     exportMetadata: exportMetadata,
     metadataFormat: metadataFormat,
     redirectSetting: redirectSetting
-  }, () => {
+  }).then(() => {
     saveSettingsBtn.textContent = 'Saved!';
     setTimeout(() => {
       saveSettingsBtn.textContent = 'Save Settings';
@@ -470,7 +676,7 @@ saveSettingsBtn.addEventListener('click', () => {
 downloadBtn.addEventListener('click', async () => {
   try {
     // Get current active tab
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
     if (tabs.length === 0) {
       showError('No active tab found');
       return;
@@ -486,77 +692,95 @@ downloadBtn.addEventListener('click', async () => {
       return;
     }
 
-    // Check if it's a media page
-    if (!url.includes('/media')) {
-      const proceed = confirm('This doesn\'t appear to be a media page. Continue anyway?');
+    const { source, includeForeign } = getRequestedSource();
+
+    // Soft tab check — Media, Replies, or profile-root all can work; the
+    // content script confirms + offers redirect on mismatch.
+    if (!url.includes('/media') && !url.includes('/replies')) {
+      const proceed = confirm('This doesn\'t appear to be a Media or Replies tab. Continue anyway?');
       if (!proceed) return;
     }
 
     downloadBtn.disabled = true;
     statusDiv.className = 'status extracting';
-    statusDiv.textContent = 'Extracting media from page...';
+    statusDiv.textContent = source === 'replies'
+      ? 'Extracting reply media from page...'
+      : 'Extracting media from page...';
 
     // Get download limit from select
     const limitValue = downloadLimitSelect.value;
     const limit = limitValue === 'all' ? null : parseInt(limitValue, 10);
 
-    // Send message to content script with limit
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      action: 'extractMedia',
-      limit: limit,
-      prepareOnly: false,
-      usernameOverride: usernameOverride
-    });
+    // Send message to content script with limit + source
+    let response;
+    try {
+      response = await runExtraction({
+        prepareOnly: false, limit, usernameOverride, source, includeForeign, tab
+      });
+    } catch (error) {
+      // Re-inject the content script and retry once (Firefox Android often
+      // drops content-script registration after process restarts).
+      // scripting.* is MV3-only; guard so Firefox MV2 never throws here.
+      if (/receiving end does not exist|no such tab|message port closed|could not establish connection/i.test(String((error && error.message) || error))) {
+        try {
+          const scriptingApi = (typeof browser !== 'undefined' && browser.scripting)
+            || (typeof chrome !== 'undefined' && chrome.scripting);
+          if (scriptingApi && scriptingApi.executeScript) {
+            await scriptingApi.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+          }
+          response = await runExtraction({
+            prepareOnly: false, limit, usernameOverride, source, includeForeign, tab
+          });
+        } catch (retryError) {
+          throw retryError;
+        }
+      } else {
+        throw error;
+      }
+    }
+    if (response && response.redirected) {
+      downloadBtn.disabled = false;
+      return;
+    }
 
     if (response.success) {
       // Store username for metadata export
       currentUsername = response.username || 'threads-user';
 
-      // Check for existing downloads before starting
+      // Check for existing downloads before starting (scoped to source tab)
       statusDiv.textContent = 'Checking for existing downloads...';
 
-      chrome.runtime.sendMessage({
+      const existingCheck = await browser.runtime.sendMessage({
         action: 'checkExistingDownloads',
-        username: currentUsername
-      }, (existingCheck) => {
-        if (chrome.runtime.lastError) {
-          // Proceed with normal download if check fails
-          statusDiv.className = 'status downloading';
-          statusDiv.textContent = `Found ${response.count} media files. Downloading...`;
-          progressDiv.style.display = 'block';
-          progressText.textContent = `Queued: ${response.count} files`;
-          progressBar.style.width = '0%';
-          showDownloadingState();
-          startStatusPolling();
-          return;
-        }
-
-        if (existingCheck && existingCheck.exists) {
-          // Found existing downloads - show resume dialog
-          statusDiv.className = 'status idle';
-          statusDiv.textContent = 'Ready';
-
-          // Store media data for resume functionality
-          pendingMediaData = {
-            mediaItems: response.mediaItems || (response.urls ? response.urls.map(url => ({ url, type: 'image', datetime: null })) : []),
-            username: currentUsername,
-            metadata: response.metadata || []
-          };
-
-          showResumeDialog(existingCheck.count, existingCheck.latestDatetime, currentUsername, pendingMediaData);
-        } else {
-          // No existing downloads - start normal download
-          statusDiv.className = 'status downloading';
-          statusDiv.textContent = `Found ${response.count} media files. Downloading...`;
-          progressDiv.style.display = 'block';
-          progressText.textContent = `Queued: ${response.count} files`;
-          progressBar.style.width = '0%';
-          showDownloadingState();
-
-          // Start status polling
-          startStatusPolling();
-        }
+        username: currentUsername,
+        source_tab: response.source_tab || source
       });
+
+      if (existingCheck.exists) {
+        // Found existing downloads - show resume dialog
+        statusDiv.className = 'status idle';
+        statusDiv.textContent = 'Ready';
+
+        // Store media data for resume functionality
+        pendingMediaData = {
+          mediaItems: response.mediaItems || (response.urls ? response.urls.map(url => ({ url, type: 'image', datetime: null })) : []),
+          username: currentUsername,
+          metadata: response.metadata || [],
+          source_tab: response.source_tab || source
+        };
+
+        showResumeDialog(existingCheck.count, existingCheck.latestDatetime, currentUsername, pendingMediaData);
+      } else {
+        // No existing downloads - start normal download
+        statusDiv.className = 'status downloading';
+        statusDiv.textContent = `Found ${response.count} media files. Downloading...`;
+        progressDiv.style.display = 'block';
+        setProgress(0, `Queued: ${response.count} files`);
+        showDownloadingState();
+
+        // Start status polling
+        startStatusPolling();
+      }
     } else {
       showError(response.error || 'Failed to extract media');
       downloadBtn.disabled = false;
@@ -579,7 +803,7 @@ downloadBtn.addEventListener('click', async () => {
 // Prepare queue (save links to file)
 prepareBtn.addEventListener('click', async () => {
   try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
     if (tabs.length === 0) {
       showError('No active tab found');
       return;
@@ -589,8 +813,9 @@ prepareBtn.addEventListener('click', async () => {
     const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : null;
     const limitValue = downloadLimitSelect.value;
     const limit = limitValue === 'all' ? null : parseInt(limitValue, 10);
+    const { source, includeForeign } = getRequestedSource();
 
-    if (!url.includes('threads.net') && !url.includes('threads.com')) {
+    if (!isSupportedPage(url)) {
       showError('Please navigate to a Threads page first (threads.net or threads.com)');
       return;
     }
@@ -600,27 +825,39 @@ prepareBtn.addEventListener('click', async () => {
     downloadBtn.disabled = true;
     prepareBtn.disabled = true;
 
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      action: 'extractMedia',
-      limit: limit,
-      prepareOnly: true,
-      usernameOverride: usernameOverride
+    const response = await runExtraction({
+      prepareOnly: true, limit, usernameOverride, source, includeForeign, tab
     });
+    if (response && response.redirected) {
+      downloadBtn.disabled = false;
+      prepareBtn.disabled = false;
+      return;
+    }
 
     if (response.success && response.urls && response.urls.length > 0) {
       const username = response.username || 'threads-user';
+      const tabTag = (response.source_tab || source || 'media');
       // Handle both array of strings and array of objects
       const urlStrings = response.urls.map(item => typeof item === 'string' ? item : item.url);
       const text = urlStrings.join('\n');
-      // Use blob URL for compatibility
+      // Use blob URL like the spec for compatibility
       const blob = new Blob([text], { type: 'text/plain' });
       const blobUrl = URL.createObjectURL(blob);
-      await chrome.downloads.download({
-        url: blobUrl,
-        filename: `threads-queues/${username}-queue.txt`,
-        saveAs: false
-      });
-      URL.revokeObjectURL(blobUrl);
+      try {
+        await browser.downloads.download({
+          url: blobUrl,
+          filename: `threads-queues/${username}-${tabTag}-queue.txt`,
+          saveAs: false
+        });
+      } catch (downloadError) {
+        // Android fallback: open the queue as a shareable/downloadable blob.
+        if (runtimeCaps.isAndroid) {
+          await browser.tabs.create({ url: blobUrl });
+        } else {
+          throw downloadError;
+        }
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
       statusDiv.className = 'status idle';
       statusDiv.textContent = `Queue saved (${response.urls.length} links)`;
     } else {
@@ -656,16 +893,18 @@ queueFileInput.addEventListener('change', async (event) => {
       return;
     }
     const usernameOverride = usernameInput.value && usernameInput.value.trim() !== '' ? usernameInput.value.trim() : 'threads-user';
+    const { source } = getRequestedSource();
     statusDiv.className = 'status downloading';
     statusDiv.textContent = `Loading queue file (${lines.length} links)...`;
     progressDiv.style.display = 'block';
-    progressBar.style.width = '0%';
+    setProgress(0);
     showDownloadingState();
 
-    await chrome.runtime.sendMessage({
+    await browser.runtime.sendMessage({
       action: 'downloadMediaFromList',
       urls: lines,
-      username: usernameOverride
+      username: usernameOverride,
+      source_tab: source === 'auto' ? 'media' : source
     });
 
     startStatusPolling();
@@ -677,7 +916,7 @@ queueFileInput.addEventListener('change', async (event) => {
 // Resume button
 resumeBtn.addEventListener('click', async () => {
   try {
-    const response = await chrome.runtime.sendMessage({ action: 'resumeDownload' });
+    const response = await browser.runtime.sendMessage({ action: 'resumeDownload' });
     if (response.success) {
       statusDiv.className = 'status downloading';
       statusDiv.textContent = 'Resuming download...';
@@ -695,7 +934,7 @@ resumeBtn.addEventListener('click', async () => {
 // Stop button
 stopBtn.addEventListener('click', async () => {
   try {
-    await chrome.runtime.sendMessage({ action: 'stopDownload' });
+    await browser.runtime.sendMessage({ action: 'stopDownload' });
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Download stopped (can be resumed)';
     progressDiv.style.display = 'none';
@@ -714,7 +953,7 @@ stopBtn.addEventListener('click', async () => {
 // Clear queue button
 clearBtn.addEventListener('click', async () => {
   try {
-    await chrome.runtime.sendMessage({ action: 'clearQueue' });
+    await browser.runtime.sendMessage({ action: 'clearQueue' });
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'Queue cleared';
     progressDiv.style.display = 'none';
@@ -736,7 +975,7 @@ function startStatusPolling() {
 
   statusInterval = setInterval(async () => {
     try {
-      const response = await chrome.runtime.sendMessage({ action: 'getStatus' });
+      const response = await browser.runtime.sendMessage({ action: 'getStatus' });
 
       if (response.isDownloading) {
         if (response.cooldownUntil > Date.now()) {
@@ -752,8 +991,7 @@ function startStatusPolling() {
         if (response.totalFiles > 0) {
           const downloaded = response.downloadCount || 0;
           const progress = (downloaded / response.totalFiles) * 100;
-          progressBar.style.width = `${Math.min(progress, 100)}%`;
-          progressText.textContent = `Downloaded: ${downloaded}/${response.totalFiles} (${response.queueLength} remaining)`;
+          setProgress(progress, `Downloaded: ${downloaded}/${response.totalFiles} (${response.queueLength} remaining)`);
         } else if (response.queueLength > 0) {
           progressText.textContent = `Queue: ${response.queueLength} remaining`;
         } else {
@@ -777,6 +1015,8 @@ function startStatusPolling() {
           showDefaultState();
           stopStatusPolling();
 
+          // Metadata is auto-exported, no need to show export button
+
           setTimeout(() => {
             statusDiv.textContent = 'Ready';
           }, 3000);
@@ -796,14 +1036,13 @@ function stopStatusPolling() {
 }
 
 // Listen for download progress updates
-chrome.runtime.onMessage.addListener((message) => {
+browser.runtime.onMessage.addListener((message) => {
   if (message.action === 'downloadProgress') {
     const downloaded = message.downloaded || message.current;
     const total = message.totalFiles || message.total;
     if (total > 0) {
       const progress = (downloaded / total) * 100;
-      progressBar.style.width = `${Math.min(progress, 100)}%`;
-      progressText.textContent = `Downloaded: ${downloaded}/${total} (${message.remaining} in queue)`;
+      setProgress(progress, `Downloaded: ${downloaded}/${total} (${message.remaining} in queue)`);
     } else {
       progressText.textContent = `Downloaded: ${message.current}/${message.total} (${message.remaining} in queue)`;
     }
@@ -825,7 +1064,7 @@ chrome.runtime.onMessage.addListener((message) => {
   } else if (message.action === 'downloadComplete') {
     statusDiv.className = 'status idle';
     statusDiv.textContent = 'All downloads complete!';
-    progressBar.style.width = '100%';
+    setProgress(100);
     progressDiv.style.display = 'none';
     downloadBtn.disabled = false;
     showDefaultState();
@@ -839,21 +1078,18 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-// Initial status check
-chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
-  if (chrome.runtime.lastError) {
-    checkProfilePage();
-    return;
-  }
+// Init persisted source settings before first paint decisions
+loadSourceSettings();
 
+// Initial status check
+browser.runtime.sendMessage({ action: 'getStatus' }).then((response) => {
   if (response.isDownloading) {
     downloadBtn.disabled = true;
     showDownloadingState();
     progressDiv.style.display = 'block';
     if (response.totalFiles > 0) {
       const progress = ((response.totalFiles - response.queueLength) / response.totalFiles) * 100;
-      progressBar.style.width = `${Math.min(progress, 100)}%`;
-      progressText.textContent = `Downloaded: ${response.totalFiles - response.queueLength}/${response.totalFiles} (${response.queueLength} remaining)`;
+      setProgress(progress, `Downloaded: ${response.totalFiles - response.queueLength}/${response.totalFiles} (${response.queueLength} remaining)`);
     }
     startStatusPolling();
   } else if (response.hasSavedState) {
@@ -865,7 +1101,12 @@ chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
     // Check if we're on a profile page (not media page)
     checkProfilePage();
   }
+}).catch(() => {
+  // Also check profile page on error
+  checkProfilePage();
 });
+
+// Note: Export metadata button removed - metadata is now auto-exported on download completion
 
 // Single media download button
 if (downloadSingleBtn) {
@@ -873,34 +1114,26 @@ if (downloadSingleBtn) {
     try {
       const url = singleMediaUrlInput.value.trim();
       const username = usernameInput.value.trim() || 'threads-user';
-
+      
       if (!url) {
         showError('Please enter a media URL');
         return;
       }
-
+      
       // Validate URL format
       if (!url.startsWith('http')) {
         showError('Please enter a valid URL starting with http:// or https://');
         return;
       }
-
+      
       downloadSingleBtn.disabled = true;
       statusDiv.className = 'status downloading';
       statusDiv.textContent = 'Downloading single media...';
 
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({
-          action: 'downloadSingleMedia',
-          url: url,
-          username: username
-        }, (result) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message });
-            return;
-          }
-          resolve(result || { success: false, error: 'No response from background script' });
-        });
+      const response = await browser.runtime.sendMessage({
+        action: 'downloadSingleMedia',
+        url: url,
+        username: username
       });
 
       if (response.success) {
@@ -916,11 +1149,8 @@ if (downloadSingleBtn) {
       }
     } catch (error) {
       showError(error.message);
-      statusDiv.className = 'status idle';
-      statusDiv.textContent = 'Ready';
     } finally {
       downloadSingleBtn.disabled = false;
     }
   });
 }
-
